@@ -1,12 +1,14 @@
 package proxy
 
 import (
-	"time"
-	"math/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/rsa"
 	"log"
+	"time"
+	"math/big"
+	"crypto/tls"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"net/http"
 	"net/http/httputil"
 	"aegis/ca"
