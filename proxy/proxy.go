@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"aegis/ca"
+	"aegis/filter"
 )
 
 type AegisProxy struct {
@@ -32,26 +33,31 @@ func NewProxy() (*AegisProxy, error) {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AddCert(caCert.Leaf)
 
-	// Configure the reverse proxy
+	// Director modifies the request before it's sent to the destination
 	director := func(req *http.Request) {
 		req.URL.Scheme = "https"
 		req.URL.Host = req.Host
 	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			RootCAs: caCertPool, // Trust our CA for outgoing connections
+			RootCAs: caCertPool,
 		},
 	}
+
+	// ReverseProxy handles forwarding requests and returning responses
 	reverseProxy := &httputil.ReverseProxy{
-		Director: director,
-		Transport: transport,
+		Director:	director,
+		Transport:	transport,
 	}
 
-	return &AegisProxy{
+	ap := &AegisProxy{
 		proxy:	reverseProxy,
 		caCert:	*caCert,
 		caCertPool: caCertPool,
-	}, nil
+	}
+
+	return ap, nil
 }
 
 // Start runs the proxy server on the specified address.
@@ -64,13 +70,22 @@ func (a *AegisProxy) Start(addr string) error {
 
 	server := &http.Server{
 		Addr:	addr,
-		Handler: a.proxy,
+		Handler: a, // AegisProxy implements http.Handler
 		TLSConfig: tlsConfig,
 	}
 
 	log.Printf("Starting Aegis proxy on %s", addr)
 	return server.ListenAndServeTLS("","") // Certs handled dynamically
 }
+
+// ServeHTTP implements the http.Handler interface.
+func (a *AegisProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if filter.ApplyFilter(w, r) {
+		return
+	}
+	a.proxy.ServeHTTP(w, r)
+}
+
 
 // generateCert creates a certificate for the requested domain, signed by the CA.
 func generateCert(domain string, caCert tls.Certificate) (*tls.Certificate, error) {
