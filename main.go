@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 	"os"
-	
-	"aegis/ca"
-	"aegis/proxy"
+
+	"github.com/akos011221/armor/ca"
+	"github.com/akos011221/armor/proxy"
 )
 
 func main() {

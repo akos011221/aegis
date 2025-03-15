@@ -3,7 +3,7 @@ services:
     build:
       context: . #Build from Dockerfile in the current directory
       dockerfile: Dockerfile
-    container_name: aegis_proxy
+    container_name: armor_proxy
     ports:
       - "8080:8080" #Port mapping between host and container
     volumes:
@@ -13,7 +13,7 @@ services:
 
   client:
     image: alpine:latest
-    container_name: aegis_client
+    container_name: armor_client
     user: root
     command: ["sh", "-c", "apk add --no-cache ca-certificates curl && mkdir -p /usr/local/share/ca-certificates && cp /certs/ca.crt /usr/local/share/ca-certificates/ca.crt && update-ca-certificates && sleep 5 && curl -x http://proxy:8080 https://ifconfig.co/ip"]
     depends_on:

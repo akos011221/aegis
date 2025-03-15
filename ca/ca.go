@@ -1,15 +1,15 @@
 package ca
 
 import (
-	"os"
-	"time"
-	"crypto/tls"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"os"
+	"time"
 )
 
 // GenerateRootCA creates a root CA certificate and private key, saving them to files.
@@ -25,13 +25,13 @@ func GenerateRootCA() error {
 		SerialNumber: big.NewInt(1), // Unique identifier
 		Subject: pkix.Name{
 			Organization: []string{"Aegis CA"},
-			CommonName: "Aegis Root CA",
+			CommonName:   "Aegis Root CA",
 		},
-		NotBefore: time.Now(),
-		NotAfter: time.Now().AddDate(10, 0, 0), // Valid for 10 years
-		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign, // For signing certificates
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(10, 0, 0),                 // Valid for 10 years
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign, // For signing certificates
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 	}
 
 	// Create the self-signed CA certificate

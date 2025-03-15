@@ -1,23 +1,24 @@
 package proxy
 
 import (
-	"log"
-	"time"
-	"math/big"
-	"crypto/tls"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"log"
+	"math/big"
 	"net/http"
 	"net/http/httputil"
-	"aegis/ca"
-	"aegis/filter"
+	"time"
+
+	"github.com/akos011221/armor/ca"
+	"github.com/akos011221/armor/filter"
 )
 
 type AegisProxy struct {
-	proxy	*httputil.ReverseProxy
-	caCert	tls.Certificate
+	proxy      *httputil.ReverseProxy
+	caCert     tls.Certificate
 	caCertPool *x509.CertPool
 }
 
@@ -47,13 +48,13 @@ func NewProxy() (*AegisProxy, error) {
 
 	// ReverseProxy handles forwarding requests and returning responses
 	reverseProxy := &httputil.ReverseProxy{
-		Director:	director,
-		Transport:	transport,
+		Director:  director,
+		Transport: transport,
 	}
 
 	ap := &AegisProxy{
-		proxy:	reverseProxy,
-		caCert:	*caCert,
+		proxy:      reverseProxy,
+		caCert:     *caCert,
 		caCertPool: caCertPool,
 	}
 
@@ -69,13 +70,13 @@ func (a *AegisProxy) Start(addr string) error {
 	}
 
 	server := &http.Server{
-		Addr:	addr,
-		Handler: a, // AegisProxy implements http.Handler
+		Addr:      addr,
+		Handler:   a, // AegisProxy implements http.Handler
 		TLSConfig: tlsConfig,
 	}
 
 	log.Printf("Starting Aegis proxy on %s", addr)
-	return server.ListenAndServeTLS("","") // Certs handled dynamically
+	return server.ListenAndServeTLS("", "") // Certs handled dynamically
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -85,7 +86,6 @@ func (a *AegisProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	a.proxy.ServeHTTP(w, r)
 }
-
 
 // generateCert creates a certificate for the requested domain, signed by the CA.
 func generateCert(domain string, caCert tls.Certificate) (*tls.Certificate, error) {
@@ -99,12 +99,12 @@ func generateCert(domain string, caCert tls.Certificate) (*tls.Certificate, erro
 		Subject: pkix.Name{
 			CommonName: domain,
 		},
-		NotBefore: time.Now(),
-		NotAfter: time.Now().AddDate(1, 0, 0), // Valid for 1 year
-		KeyUsage: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(1, 0, 0), // Valid for 1 year
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames: []string{domain},
+		DNSNames:              []string{domain},
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert.Leaf, &priv.PublicKey, caCert.PrivateKey)
@@ -114,7 +114,7 @@ func generateCert(domain string, caCert tls.Certificate) (*tls.Certificate, erro
 
 	cert := &tls.Certificate{
 		Certificate: [][]byte{derBytes},
-		PrivateKey: priv,
+		PrivateKey:  priv,
 	}
 	return cert, nil
 }
