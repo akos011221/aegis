@@ -105,7 +105,7 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 		},
 		NotBefore: now.Add(-1 * time.Hour), // Backdate it to avoid clock skew issues
 		NotAfter: now.Add(config.Validity),
-		ExtKeyUsaage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		IsCA:	true,
 		MaxPathLen: 1,
