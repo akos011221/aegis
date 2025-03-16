@@ -19,12 +19,12 @@ import (
 
 // Configuration constants for the CA certificate
 const (
-	DefaultCAPath = "certs/ca.crt"
-	DefaultCAKeyPath = "certs/ca.key"
-	DefaultCAKeyBits = 4096
-	DefaultCAValidity = 10 * 365 * 24 *time.Hour
+	DefaultCAPath         = "certs/ca.crt"
+	DefaultCAKeyPath      = "certs/ca.key"
+	DefaultCAKeyBits      = 4096
+	DefaultCAValidity     = 10 * 365 * 24 * time.Hour
 	DefaultCAOrganization = "Armor Security"
-	DefaultCACommonName = "Armor Proxy Root CA"
+	DefaultCACommonName   = "Armor Proxy Root CA"
 )
 
 // CAConfig holds the configuration options for generating a Certificate Authority
@@ -51,12 +51,12 @@ type CAConfig struct {
 // DefaultCAConfig returns a default configuration for CA certificate generation
 func DefaultCAConfig() CAConfig {
 	return CAConfig{
-		CertPath:	DefaultCAPath,
-		KeyPath:	DefaultCAKeyPath,
-		KeyBits:	DefaultCAKeyBits,
-		Validity:	DefaultCAValidity,
-		Organization:	DefaultCAOrganization,
-		CommonName:	DefaultCACommonName,
+		CertPath:     DefaultCAPath,
+		KeyPath:      DefaultCAKeyPath,
+		KeyBits:      DefaultCAKeyBits,
+		Validity:     DefaultCAValidity,
+		Organization: DefaultCAOrganization,
+		CommonName:   DefaultCACommonName,
 	}
 }
 
@@ -101,14 +101,14 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 		SerialNumber: big.NewInt(now.UnixNano()), // Unique identifier based on current time
 		Subject: pkix.Name{
 			Organization: []string{config.Organization},
-			CommonName: config.CommonName,
+			CommonName:   config.CommonName,
 		},
-		NotBefore: now.Add(-1 * time.Hour), // Backdate it to avoid clock skew issues
-		NotAfter: now.Add(config.Validity),
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		NotBefore:             now.Add(-1 * time.Hour), // Backdate it to avoid clock skew issues
+		NotAfter:              now.Add(config.Validity),
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
-		IsCA:	true,
-		MaxPathLen: 1,
+		IsCA:                  true,
+		MaxPathLen:            1,
 	}
 
 	// Create self-signed CA certificate (signed by its own key)
@@ -118,7 +118,7 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 		&template, // Certificate template
 		&template, // Parent is same as template, because self-signed
 		&priv.PublicKey,
-		priv,	// Certificate will be signed by this private key
+		priv, // Certificate will be signed by this private key
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create CA certificate: %w", err)
@@ -132,7 +132,7 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 	defer certOut.Close() // File is closed even if encoding fails
 
 	err = pem.Encode(certOut, &pem.Block{
-		Type: "CERTIFICATE",
+		Type:  "CERTIFICATE",
 		Bytes: derBytes,
 	})
 	if err != nil {
@@ -148,7 +148,7 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 	defer keyOut.Close() // File is closed even if encoding fails
 
 	err = pem.Encode(keyOut, &pem.Block{
-		Type: "RSA PRIVATE KEY",
+		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(priv),
 	})
 	if err != nil {
@@ -180,7 +180,7 @@ func LoadRootCAFromPath(certPath, keyPath string) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CA certificate and key: %w", err)
 	}
-	
+
 	// More like a defensive check to make it future-proof
 	if len(cert.Certificate) == 0 {
 		return nil, fmt.Errorf("no certificate data found in %s", certPath)
@@ -252,4 +252,78 @@ func InstallCACertificate(certPath string) string {
 
 	return instructions
 }
-// TODO: Generate certificates for the clients, so they can authenticate to Armor Proxy server
+
+// GenerateClientCertificate creates a client certificate signed by the CA.
+func GenerateClientCertificate(commonName string, caCert tls.Certificate, outCertPath, outKeyPath string) error {
+	// Create a private key for the client certificate
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return fmt.Errorf("failed to generate client certificate private key: %w", err)
+	}
+
+	// Parse the CA certificate.
+	// TODO: Check if I can avoid parsing by getting the Leaf field...
+	ca, err := x509.ParseCertificate(caCert.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("failed to parse CA certificate: %w", err)
+	}
+
+	// For validity period
+	now := time.Now()
+
+	// Client certificate template
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(now.UnixNano()),
+		Subject: pkix.Name{
+			CommonName:   commonName,
+			Organization: []string{"Armor Proxy Client"},
+		},
+		NotBefore:             now.Add(-1 * time.Hour),
+		NotAfter:              now.AddDate(1, 0, 0),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+	}
+
+	// Create client certificate signed by the CA
+	derBytes, err := x509.CreateCertificate(
+		rand.Reader,
+		&template,
+		ca, // Parent
+		&priv.PublicKey,
+		caCert.PrivateKey, // Signed with this key
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create client certificate: %w", err)
+	}
+
+	// Create file, then save in PEM format
+	certOut, err := os.Create(outCertPath)
+	if err != nil {
+		return fmt.Errorf("failed to create client certificate: %w", err)
+	}
+	defer certOut.Close()
+
+	err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	if err != nil {
+		return fmt.Errorf("failed to encode client certificate to PEM: %w", err)
+	}
+
+	// Save private key in PEM format
+	keyOut, err := os.OpenFile(outKeyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to create client key file: %w", err)
+	}
+	defer keyOut.Close()
+
+	err = pem.Encode(keyOut, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(priv),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to encode client private key to PEM: %w", err)
+	}
+
+	return nil
+}
