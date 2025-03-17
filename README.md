@@ -1,0 +1,1 @@
+Armor Proxy is a Man-in-the-Middle (MITM) proxy that aacts as a Certificate Authority (CA). It generates and signs SSL certificates for each target destination that its clients request. This allows Armor to intercept and inspect encrypted HTTPS traffic.
