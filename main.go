@@ -17,7 +17,9 @@ func main() {
 	}
 
 	// Start HTTP proxy
-	p.StartHTTP(":4090")
+	if err = p.StartHTTP(":4090"); err != nil {
+		log.Fatalf("HTTP proxy failed: %v", err)
+	}
 
 	// Start HTTPS proxy; TODO: create TLS certificate for the proxy
 	// p.StartHTTPS(":443")

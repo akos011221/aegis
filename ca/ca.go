@@ -341,10 +341,10 @@ func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Ce
 	var ca *x509.Certificate
 	if caCert.Leaf != nil {
 		ca = caCert.Leaf
-	}
-	ca, err = x509.ParseCertificate(caCert.Certificate[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+	} else {
+		ca, err = x509.ParseCertificate(caCert.Certificate[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
 	}
 
 	// Check if hostname is an IP address
