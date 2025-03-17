@@ -21,7 +21,7 @@ func main() {
 		log.Fatalf("HTTP proxy failed: %v", err)
 	}
 
-	// Start HTTPS proxy; TODO: create TLS certificate for the proxy
-	// p.StartHTTPS(":443")
+	// Start TLS proxy; TODO: create SSL certificate for the proxy
+	// p.StartTLS(":443")
 
 }
