@@ -1,18 +1,16 @@
 package proxy
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
+	"errors"
 	"fmt"
 	"io"
 	"log"
-	"math/big"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,8 +104,14 @@ func NewProxy(p ProxyConfig) (*ArmorProxy, error) {
 		return nil, fmt.Errorf("failed to load CA certificate: %w", err)
 	}
 
-	// Create CA certificate pool for verifying server certificates
-	caCertPool := x509.NewCertPool()
+	// x509.SystemCertPool() loads trusted CAs from the system
+	caCertPool, err := x509.SystemCertPool()
+	if err != nil {
+		// If we can't get it, create a new one
+		caCertPool = x509.NewCertPool()
+	}
+	
+	// Add Armor's CA certificate to the pool
 	if caCert.Leaf == nil {
 		// If Leaf is not populated, parse the certificate
 		leaf, err := x509.ParseCertificate(caCert.Certificate[0])
@@ -130,8 +134,8 @@ func NewProxy(p ProxyConfig) (*ArmorProxy, error) {
 	}, nil
 }
 
-// Start runs an HTTP server for the proxy.
-func (a *ArmorProxy) Start(addr string) error {
+// StartHTTP runs an HTTP server for the proxy.
+func (a *ArmorProxy) StartHTTP(addr string) error {
 	server := &http.Server{
 		Addr:    a.config.ListenAddr,
 		Handler: a, // ArmorProxy implements http.Handler
@@ -141,6 +145,22 @@ func (a *ArmorProxy) Start(addr string) error {
 
 	a.logger.Printf("Starting Armor proxy on %s", addr)
 	return server.ListenAndServe()
+}
+
+// StartHTTPS runs an HTTPS server for the proxy.
+func (a *ArmorProxy) StartHTTPS(addr string, certFile, keyFile string) error {
+	server := &http.Server{
+		Addr: addr,
+		Handler: a,
+		ReadTimeout: a.config.ReadTimeout,
+		WriteTimeout: a.config.WriteTimeout,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{a.caCert},
+		},
+	}
+
+	a.logger.Printf("Starting Armor HTTPS proxy on %s", addr)
+	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -157,8 +177,8 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle CONNECT requests (for HTTPS connections)
-	// HTTP CONNECT method is used to establish a tunnel for HTTPS traffic
+	// Handle CONNECT requests
+	// HTTP CONNECT method is used to establish a tunnel
 	if r.Method == http.MethodConnect {
 		a.handleConnect(w, r)
 		return
@@ -168,7 +188,7 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.forwardRequest(w, r)
 }
 
-// handleConnect handles HTTPS tunneling by establishing a MITM connection.
+// handleConnect handles HTTP tunneling by establishing a MITM connection.
 /* The process is the following:
 	I. Hijacks the connection from the HTTP server
 	II. Establishes a TLS connection with the client using a generated certificate
@@ -200,7 +220,7 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	// Notify client that the tunnel is built
 	// This is the standard response for a successful CONNECT request
-	if _, err := clientConn.Write([]byte("HTTP/1.1 200 Connectoin Established\r\n\r\n")); err != nil {
+	if _, err := clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
 		a.logger.Printf("Error writing to client connection: %v", err)
 		clientConn.Close()
 		return
@@ -379,7 +399,7 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 }
 
 // removeHopByHop removes hop-by-hop headers as defined in RFC 2616
-func removeHopByHop(message interface{}) {
+func removeHopByHop(message any) {
 	hopByHopHeaders := []string{
 		"Connection",
 		"Keep-Alive",
@@ -408,5 +428,5 @@ func isClosedConnError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return err == io.EOF || err == io.ErrClosedPipe || err.Error() == "use of closed network connection"
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || strings.Contains(err.Error(), "use of closed network connection")
 }

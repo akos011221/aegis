@@ -16,8 +16,10 @@ func main() {
 		log.Fatalf("Failed to create proxy: %v", err)
 	}
 
-	// Start it
-	if err := p.Start(config.ListenAddr); err != nil {
-		log.Fatalf("Failed to start proxy: %v", err)
-	}
+	// Start HTTP proxy
+	p.StartHTTP(":4090")
+
+	// Start HTTPS proxy; TODO: create TLS certificate for the proxy
+	// p.StartHTTPS(":443")
+
 }

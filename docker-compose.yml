@@ -15,7 +15,7 @@ services:
     image: alpine:latest
     container_name: armor_client
     user: root
-    command: ["sh", "-c", "apk add --no-cache ca-certificates curl && mkdir -p /usr/local/share/ca-certificates && cp /certs/ca.crt /usr/local/share/ca-certificates/ca.crt && update-ca-certificates && sleep 5 && curl -v -x https://proxy:4090 https://ifconfig.co/ip"]
+    command: ["sh", "-c", "apk add --no-cache ca-certificates curl && mkdir -p /usr/local/share/ca-certificates && cp /certs/ca.crt /usr/local/share/ca-certificates/ca.crt && update-ca-certificates && sleep 3 && curl -v -x http://proxy:4090 https://ifconfig.co/ip"]
     depends_on:
       - proxy #Wait for proxy to start
     volumes:
