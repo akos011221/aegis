@@ -9,7 +9,7 @@ import (
 func main() {
 	// Testing with the default configuration
 	config := proxy.DefaultConfig()
-	
+
 	// Create a new instance of the proxy
 	p, err := proxy.NewProxy(config)
 	if err != nil {

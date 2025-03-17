@@ -345,6 +345,7 @@ func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Ce
 		ca, err = x509.ParseCertificate(caCert.Certificate[0])
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+		}
 	}
 
 	// Check if hostname is an IP address
@@ -363,17 +364,17 @@ func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Ce
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
-			CommonName: hostname,
+			CommonName:   hostname,
 			Organization: []string{"Armor Proxy Server"},
 		},
-		NotBefore: now.Add(-1 * time.Hour),
-		NotAfter: now.AddDate(0, 1, 0),
-		KeyUsage: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		NotBefore:             now.Add(-1 * time.Hour),
+		NotAfter:              now.AddDate(0, 1, 0),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA: false,
-		DNSNames: dnsNames,
-		IPAddresses: ipAddresses,
+		IsCA:                  false,
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
 	}
 
 	// Create server certificate signed by the CA
@@ -391,7 +392,7 @@ func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Ce
 	// Creat in-memory certificate
 	cert := &tls.Certificate{
 		Certificate: [][]byte{derBytes},
-		PrivateKey: priv,
+		PrivateKey:  priv,
 	}
 
 	// Parse certificate for immediate use

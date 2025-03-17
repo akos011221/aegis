@@ -44,7 +44,7 @@ type ArmorProxy struct {
 // ProxyConfig holds the configurations options for the proxy.
 type ProxyConfig struct {
 	// CA certificate configuration
-	CaCfg	ca.CAConfig
+	CaCfg ca.CAConfig
 
 	// Listening address and port
 	ListenAddr string
@@ -71,7 +71,7 @@ type ProxyConfig struct {
 // DefaultConfig returns a default configuration for the proxy.
 func DefaultConfig() ProxyConfig {
 	return ProxyConfig{
-		CaCfg:		ca.DefaultCAConfig(),
+		CaCfg:          ca.DefaultCAConfig(),
 		ListenAddr:     ":4090",
 		Verbose:        true,
 		CertCacheSize:  1000,
@@ -110,7 +110,7 @@ func NewProxy(p ProxyConfig) (*ArmorProxy, error) {
 		// If we can't get it, create a new one
 		caCertPool = x509.NewCertPool()
 	}
-	
+
 	// Add Armor's CA certificate to the pool
 	if caCert.Leaf == nil {
 		// If Leaf is not populated, parse the certificate
@@ -125,21 +125,21 @@ func NewProxy(p ProxyConfig) (*ArmorProxy, error) {
 	logger := log.New(p.LogDestination, "ArmorProxy: ", log.LstdFlags)
 
 	return &ArmorProxy{
-		caCert: *caCert,
+		caCert:     *caCert,
 		caCertPool: caCertPool,
-		certCache: make(map[string]*tls.Certificate),
-		mu: sync.RWMutex{},
-		logger: logger,
-		config: p,
+		certCache:  make(map[string]*tls.Certificate),
+		mu:         sync.RWMutex{},
+		logger:     logger,
+		config:     p,
 	}, nil
 }
 
 // StartHTTP runs an HTTP server for the proxy.
 func (a *ArmorProxy) StartHTTP(addr string) error {
 	server := &http.Server{
-		Addr:    a.config.ListenAddr,
-		Handler: a, // ArmorProxy implements http.Handler
-		ReadTimeout: a.config.ReadTimeout,
+		Addr:         a.config.ListenAddr,
+		Handler:      a, // ArmorProxy implements http.Handler
+		ReadTimeout:  a.config.ReadTimeout,
 		WriteTimeout: a.config.WriteTimeout,
 	}
 
@@ -150,9 +150,9 @@ func (a *ArmorProxy) StartHTTP(addr string) error {
 // StartHTTPS runs an HTTPS server for the proxy.
 func (a *ArmorProxy) StartHTTPS(addr string, certFile, keyFile string) error {
 	server := &http.Server{
-		Addr: addr,
-		Handler: a,
-		ReadTimeout: a.config.ReadTimeout,
+		Addr:         addr,
+		Handler:      a,
+		ReadTimeout:  a.config.ReadTimeout,
 		WriteTimeout: a.config.WriteTimeout,
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{a.caCert},
@@ -190,10 +190,10 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handleConnect handles HTTP tunneling by establishing a MITM connection.
 /* The process is the following:
-	I. Hijacks the connection from the HTTP server
-	II. Establishes a TLS connection with the client using a generated certificate
-	III. Establishes a TLS connection with the target server
-	IV. Copies data bidirectionally between the client and target
+I. Hijacks the connection from the HTTP server
+II. Establishes a TLS connection with the client using a generated certificate
+III. Establishes a TLS connection with the target server
+IV. Copies data bidirectionally between the client and target
 */
 func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	/*
@@ -208,7 +208,7 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Hijacking is not supported", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Get the underlying connection
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
@@ -256,7 +256,7 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	// Establish a TLS connection to the target server
 	targetConn, err := tls.Dial("tcp", r.Host, &tls.Config{
-		RootCAs: a.caCertPool,
+		RootCAs:            a.caCertPool,
 		InsecureSkipVerify: a.config.AllowInsecure,
 	})
 	if err != nil {
@@ -301,10 +301,10 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 // forwardRequest forwards (non-CONNECT) HTTP requests to the destination server.
 /* The process is the following:
-	I. Creates a new HTTP transport with the custom options
-	II. Clones the request, prepares it for forwarding
-	III. Sends the request to the target server
-	IV. Forwards the response back to the client
+I. Creates a new HTTP transport with the custom options
+II. Clones the request, prepares it for forwarding
+III. Sends the request to the target server
+IV. Forwards the response back to the client
 */
 func (a *ArmorProxy) forwardRequest(w http.ResponseWriter, r *http.Request) {
 	transport := &http.Transport{
