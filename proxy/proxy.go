@@ -378,5 +378,35 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 	return cert, nil
 }
 
-// TODO: Remove the hop-by-hop headers
-// TODO: Handle errors when peers try to write to a closed connection
+// removeHopByHop removes hop-by-hop headers as defined in RFC 2616
+func removeHopByHop(message interface{}) {
+	hopByHopHeaders := []string{
+		"Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te",
+		"Trailers",
+		"Transfer-Encoding",
+		"Upgrade",
+	}
+
+	switch v := message.(type) {
+	case *http.Request:
+		for _, header := range hopByHopHeaders {
+			v.Header.Del(header)
+		}
+	case *http.Response:
+		for _, header := range hopByHopHeaders {
+			v.Header.Del(header)
+		}
+	}
+}
+
+// isClosedConnError checks if the error is due to a closed connection
+func isClosedConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return err == io.EOF || err == io.ErrClosedPipe || err.Error() == "use of closed network connection"
+}
