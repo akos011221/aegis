@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -326,4 +327,79 @@ func GenerateClientCertificate(commonName string, caCert tls.Certificate, outCer
 	}
 
 	return nil
+}
+
+// GenerateServerCertificate creates an in-memory server certificate signed by the CA.
+func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Certificate, error) {
+	// Generate a private key for the server certificate
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate server certificate private key: %w", err)
+	}
+
+	// Check if there's Leaf for CA, if not, then parse it
+	var ca *x509.Certificate
+	if caCert.Leaf != nil {
+		ca = caCert.Leaf
+	} else {
+		ca, err = x509.ParseCertificate(caCert.Certificate[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+		}
+	}
+
+	// Check if hostname is an IP address
+	ipAddresses := []net.IP{}
+	dnsNames := []string{hostname}
+
+	if ip := net.ParseIP(hostname); ip != nil {
+		ipAddresses = append(ipAddresses, ip)
+		// If it's an IP, don't include it as DNS name
+		dnsNames = []string{}
+	}
+
+	now := time.Now()
+
+	// Server certificate template
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(now.UnixNano()),
+		Subject: pkix.Name{
+			CommonName:   hostname,
+			Organization: []string{"Armor Proxy Server"},
+		},
+		NotBefore:             now.Add(-1 * time.Hour),
+		NotAfter:              now.AddDate(0, 1, 0),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
+	}
+
+	// Create server certificate signed by the CA
+	derBytes, err := x509.CreateCertificate(
+		rand.Reader,
+		&template,
+		ca, // Parent
+		&priv.PublicKey,
+		caCert.PrivateKey, // Signed with this key
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create server certificate: %w", err)
+	}
+
+	// Creat in-memory certificate
+	cert := &tls.Certificate{
+		Certificate: [][]byte{derBytes},
+		PrivateKey:  priv,
+	}
+
+	// Parse certificate for immediate use
+	cert.Leaf, err = x509.ParseCertificate(derBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse generated certificate: %w", err)
+	}
+
+	return cert, nil
 }

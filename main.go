@@ -2,29 +2,26 @@ package main
 
 import (
 	"log"
-	"os"
 
-	"github.com/akos011221/armor/ca"
 	"github.com/akos011221/armor/proxy"
 )
 
 func main() {
-	// Generate the root CA if not already there
-	if _, err := os.Stat("certs/ca.crt"); os.IsNotExist(err) {
-		log.Println("Generating root CA certificate...")
-		if err := ca.GenerateRootCA(); err != nil {
-			log.Fatalf("Failed to generate CA: %v", err)
-		}
-	}
+	// Testing with the default configuration
+	config := proxy.DefaultConfig()
 
-	// Initialize the proxy
-	p, err := proxy.NewProxy()
+	// Create a new instance of the proxy
+	p, err := proxy.NewProxy(config)
 	if err != nil {
-		log.Fatalf("Failed to initialize proxy: %v", err)
+		log.Fatalf("Failed to create proxy: %v", err)
 	}
 
-	// Start the proxy
-	if err := p.Start(":8080"); err != nil {
-		log.Fatalf("Proxy failed: %v", err)
+	// Start HTTP proxy
+	if err = p.StartHTTP(":4090"); err != nil {
+		log.Fatalf("HTTP proxy failed: %v", err)
 	}
+
+	// Start HTTPS proxy; TODO: create TLS certificate for the proxy
+	// p.StartHTTPS(":443")
+
 }
