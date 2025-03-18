@@ -11,5 +11,5 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /app/armor /usr/local/bin/armor
 COPY --from=builder /app/certs /certs
-EXPOSE 4090
+EXPOSE 4090 4091
 CMD ["armor"]
