@@ -170,6 +170,11 @@ func (a *ArmorProxy) StartTLS(addr string, certFile, keyFile string) error {
 // ServeHTTP implements the http.Handler interface.
 // It is called for each incoming HTTP request.
 func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Extract the host from the request (without the port)
+	if host, _, err := net.SplitHostPort(r.Host); err == nil {
+		r.Host = host
+	}
+
 	// Log the incoming request if verbose logging is enabled
 	if a.config.Verbose {
 		a.logger.Printf("Received request: %s %s", r.Method, r.URL)
@@ -230,17 +235,10 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract the hostname from the request
-	// We need it to generate a certificate for the host
-	host, _, err := net.SplitHostPort(r.Host)
-	if err != nil {
-		host = r.Host
-	}
-
 	// Generate or retrieve a certificate for the requested host
-	cert, err := a.getCertificate(host)
+	cert, err := a.getCertificate(r.Host)
 	if err != nil {
-		a.logger.Printf("Error getting certificate for %s: %v", host, err)
+		a.logger.Printf("Error getting certificate for %s: %v", r.Host, err)
 		clientConn.Close()
 		return
 	}
@@ -370,33 +368,27 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Remove port if present
-	hostname := host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		hostname = h
-	}
-
 	// Try the cache first
-	if cert, exists := a.certCache[hostname]; exists {
+	if cert, exists := a.certCache[host]; exists {
 		if a.config.Verbose {
-			a.logger.Printf("Using cached certificate for %s", hostname)
+			a.logger.Printf("Using cached certificate for %s", host)
 		}
 		return cert, nil
 	}
 
 	// Generate new certificate for this host
 	if a.config.Verbose {
-		a.logger.Printf("Generating new certificate for %s", hostname)
+		a.logger.Printf("Generating new certificate for %s", host)
 	}
 
-	cert, err := ca.GenerateServerCertificate(hostname, a.caCert)
+	cert, err := ca.GenerateServerCertificate(host, a.caCert)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate certificate for %s: %w", hostname, err)
+		return nil, fmt.Errorf("failed to generate certificate for %s: %w", host, err)
 	}
 
 	// Add to cache if we haven't exceeded the cache size limit
 	if len(a.certCache) < a.config.CertCacheSize {
-		a.certCache[hostname] = cert
+		a.certCache[host] = cert
 	}
 
 	return cert, nil
