@@ -170,11 +170,6 @@ func (a *ArmorProxy) StartTLS(addr string, certFile, keyFile string) error {
 // ServeHTTP implements the http.Handler interface.
 // It is called for each incoming HTTP request.
 func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Extract the host from the request (without the port)
-	if host, _, err := net.SplitHostPort(r.Host); err == nil {
-		r.Host = host
-	}
-
 	// Log the incoming request if verbose logging is enabled
 	if a.config.Verbose {
 		a.logger.Printf("Received request: %s %s", r.Method, r.URL)
@@ -368,8 +363,14 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Remove the port from the request host
+	var hostWithoutPort string
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		hostWithoutPort = h
+	}
+
 	// Try the cache first
-	if cert, exists := a.certCache[host]; exists {
+	if cert, exists := a.certCache[hostWithoutPort]; exists {
 		if a.config.Verbose {
 			a.logger.Printf("Using cached certificate for %s", host)
 		}
@@ -378,17 +379,17 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 
 	// Generate new certificate for this host
 	if a.config.Verbose {
-		a.logger.Printf("Generating new certificate for %s", host)
+		a.logger.Printf("Generating new certificate for %s", hostWithoutPort)
 	}
 
-	cert, err := ca.GenerateServerCertificate(host, a.caCert)
+	cert, err := ca.GenerateServerCertificate(hostWithoutPort, a.caCert)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate certificate for %s: %w", host, err)
+		return nil, fmt.Errorf("failed to generate certificate for %s: %w", hostWithoutPort, err)
 	}
 
 	// Add to cache if we haven't exceeded the cache size limit
 	if len(a.certCache) < a.config.CertCacheSize {
-		a.certCache[host] = cert
+		a.certCache[hostWithoutPort] = cert
 	}
 
 	return cert, nil
