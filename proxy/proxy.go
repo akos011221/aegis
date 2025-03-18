@@ -46,8 +46,11 @@ type ProxyConfig struct {
 	// CA certificate configuration
 	CaCfg ca.CAConfig
 
-	// Listening address and port
-	ListenAddr string
+	// Listening address and port for HTTP
+	ListenAddrHTTP string
+
+	// Listening address and port for TLS
+	ListenAddrTLS string
 
 	// If true, detailed logging is enabled
 	Verbose bool
@@ -72,7 +75,8 @@ type ProxyConfig struct {
 func DefaultConfig() ProxyConfig {
 	return ProxyConfig{
 		CaCfg:          ca.DefaultCAConfig(),
-		ListenAddr:     ":4090",
+		ListenAddrHTTP: ":4090",
+		ListenAddrTLS:  ":4091",
 		Verbose:        true,
 		CertCacheSize:  1000,
 		ReadTimeout:    30 * time.Second,
@@ -137,7 +141,7 @@ func NewProxy(p ProxyConfig) (*ArmorProxy, error) {
 // StartHTTP runs an HTTP server for the proxy.
 func (a *ArmorProxy) StartHTTP(addr string) error {
 	server := &http.Server{
-		Addr:         a.config.ListenAddr,
+		Addr:         a.config.ListenAddrHTTP,
 		Handler:      a, // ArmorProxy implements http.Handler
 		ReadTimeout:  a.config.ReadTimeout,
 		WriteTimeout: a.config.WriteTimeout,
@@ -150,8 +154,8 @@ func (a *ArmorProxy) StartHTTP(addr string) error {
 // StartHTTPS runs an HTTPS server for the proxy.
 func (a *ArmorProxy) StartHTTPS(addr string, certFile, keyFile string) error {
 	server := &http.Server{
-		Addr:         addr,
-		Handler:      a,
+		Addr:         a.config.ListenAddrTLS,
+		Handler:      a, // ArmorProxy implements http.Handler
 		ReadTimeout:  a.config.ReadTimeout,
 		WriteTimeout: a.config.WriteTimeout,
 		TLSConfig: &tls.Config{
@@ -172,7 +176,7 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply filters
-	if filter.ApplyFilter(w, r) {
+	if filter.ApplyFilter(filter.DefaultFilters(), w, r) {
 		a.logger.Printf("Blocked request to %s", r.Host)
 		return
 	}
