@@ -15,7 +15,7 @@ import (
 
 	"github.com/akos011221/armor/ca"
 	"github.com/akos011221/armor/helpers"
-	"github.com/akos011221/armor/plugins"
+	"github.com/akos011221/armor/plugin"
 )
 
 // ArmorProxy represents MITM (man-in-the-middle) proxy.
@@ -38,7 +38,7 @@ type ArmorProxy struct {
 	logger *log.Logger
 
 	// config contains the proxy's configuration options
-	config ProxyConfig
+	config *ProxyConfig
 }
 
 // ProxyConfig holds the configurations options for the proxy.
@@ -67,13 +67,19 @@ type ProxyConfig struct {
 	// If true, proxy will not validate server certificates
 	AllowInsecure bool
 
+	// Name of the plugins that should be enabled
+	EnabledPlugins []string
+
+	// Map that contains the plugin configurations
+	PluginsConfig map[string]any
+
 	// Where to send the logs (e.g., os.Stdout, a file, etc.)
 	LogDestination io.Writer
 }
 
 // DefaultConfig returns a default configuration for the proxy.
-func DefaultConfig() ProxyConfig {
-	return ProxyConfig{
+func DefaultConfig() *ProxyConfig {
+	return &ProxyConfig{
 		CaCfg:          ca.DefaultCAConfig(),
 		ListenAddrHTTP: ":4090",
 		ListenAddrTLS:  ":4091",
@@ -82,12 +88,14 @@ func DefaultConfig() ProxyConfig {
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		AllowInsecure:  false,
+		EnabledPlugins: make([]string, 0),
+		PluginsConfig:  make(map[string]any, 0),
 		LogDestination: os.Stdout,
 	}
 }
 
 // NewProxy initializes the Armor proxy with the given configuration.
-func NewProxy(p ProxyConfig) (*ArmorProxy, error) {
+func NewProxy(p *ProxyConfig) (*ArmorProxy, error) {
 	var caCert *tls.Certificate
 	var err error
 
@@ -174,30 +182,23 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.config.Verbose {
 		a.logger.Printf("Received request: %s %s", r.Method, r.URL)
 	}
-	// Create a new plugin manager and factory
-	manager := plugins.NewArmorPluginManager()
-	factory := plugins.NewArmorPluginFactory()
 
-	// Configurations for all plugins, keys are the plugin names
-	// Later, this will be loaded from a file
-	pluginsCfg := map[string]any{
-		"blocklist": map[string]bool{
-			"facebook.com": true,
-		},
-	}
-
-	// Create a blocklist plugin via the factory
-	blocklistPlugin, err := factory.CreatePlugin("blocklist", pluginsCfg)
+	// We run the plugins, if there's any.
+	// pluginName is the name of the plugin that errored or cancelled the request, if there as any
+	// outcome is the result of the processing
+	// err is the error if there was any, while processing the plugins
+	pluginName, outcome, err := runPlugins(r, a.config.EnabledPlugins, a.config.PluginsConfig)
 	if err != nil {
-		a.logger.Printf("Error creating blocklist plugin: %v", err)
+		// Request is cancelled not only if it's blocked by a plugin,
+		// but also if there was an error in the processing
+		a.logger.Printf("Error while processing : %v", err)
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
 	}
-
-	// Register the plugin with the manager
-	manager.Register(blocklistPlugin)
-
-	// Use the plugin manager to process the request before it's handled
-	if err := manager.ProcessRequest(r); err != nil {
-		a.logger.Printf("Request failed or was cancelled: %v", err)
+	if outcome == plugin.Cancel {
+		// If a plugin cancelled (blocked) the request, then its name is
+		// stored in the pluginName variable
+		a.logger.Printf("Plugin %s cancelled the request", pluginName)
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -444,4 +445,43 @@ func isClosedConnError(err error) bool {
 		return false
 	}
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || strings.Contains(err.Error(), "use of closed network connection")
+}
+
+// runPlugins creates the plugin manager, plugin factory and takes care of processing the plugins.
+func runPlugins(r interface{}, pluginNames []string, pluginsConfig map[string]any) (string, plugin.ProcessResult, error) {
+	// Plugin manager takes care of registrating and running the plugins
+	manager := plugin.NewArmorPluginManager()
+	// Plugin factory takes care of initializing a new instance of a plugin
+	factory := plugin.NewArmorPluginFactory()
+
+	// Create the plugins via the factory
+	var plugins []plugin.ArmorPlugin
+	for _, pluginName := range pluginNames {
+		p, err := factory.CreatePlugin(pluginName, pluginsConfig)
+		if err != nil {
+			// Probably shouldn't cancel the request in this case,
+			// but now it does
+			return pluginName, plugin.Cancel, fmt.Errorf("plugin factory failed to create %s", pluginName)
+		}
+		plugins = append(plugins, p)
+	}
+
+	// Register each successfully created plugins
+	for _, plugin := range plugins {
+		manager.Register(plugin)
+	}
+
+	// Check if "r" is a request, if yes, do the request processing with the plugins
+	if req, ok := r.(*http.Request); ok {
+		// Handle over the plugins to the manager, which will call each
+		// plugin's process method
+		p, outcome, err := manager.ProcessRequest(req)
+		if err != nil {
+			return p, plugin.Cancel, fmt.Errorf("error while processing plugin %s: %v", p, err)
+		}
+		if outcome == plugin.Cancel {
+			return p, plugin.Cancel, nil
+		}
+	}
+	return "", plugin.Continue, nil
 }

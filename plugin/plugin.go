@@ -1,4 +1,4 @@
-package plugins
+package plugin
 
 import (
 	"errors"
@@ -51,19 +51,19 @@ func (apm *ArmorPluginManager) Register(ap ArmorPlugin) {
 // ProcessRequest iterates through all registered plugins and calls
 // their ProcessRequest method. If any plugin returns Cancel, the
 // request is cancelled and the error is returned.
-func (apm *ArmorPluginManager) ProcessRequest(r *http.Request) error {
+func (apm *ArmorPluginManager) ProcessRequest(r *http.Request) (string, ProcessResult, error) {
 	for _, plugin := range apm.plugins {
 
 		outcome, err := plugin.ProcessRequest(r)
 
 		if err != nil {
-			return fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
+			return plugin.Name(), Cancel, fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
 		}
 		if outcome == Cancel {
-			return fmt.Errorf("plugin %s cancelled the request", plugin.Name())
+			return plugin.Name(), Cancel, nil
 		}
 	}
-	return nil
+	return "", Continue, nil
 }
 
 // ProcessResponse iterates through all registered plugins and calls
