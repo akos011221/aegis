@@ -147,12 +147,12 @@ func (a *ArmorProxy) StartHTTP(addr string) error {
 		WriteTimeout: a.config.WriteTimeout,
 	}
 
-	a.logger.Printf("Starting Armor proxy on %s", addr)
+	a.logger.Printf("Starting Armor Proxy HTTP listener on %s", addr)
 	return server.ListenAndServe()
 }
 
-// StartHTTPS runs an HTTPS server for the proxy.
-func (a *ArmorProxy) StartHTTPS(addr string, certFile, keyFile string) error {
+// StartTLS runs an TLS server for the proxy.
+func (a *ArmorProxy) StartTLS(addr string, certFile, keyFile string) error {
 	server := &http.Server{
 		Addr:         a.config.ListenAddrTLS,
 		Handler:      a, // ArmorProxy implements http.Handler
@@ -163,7 +163,7 @@ func (a *ArmorProxy) StartHTTPS(addr string, certFile, keyFile string) error {
 		},
 	}
 
-	a.logger.Printf("Starting Armor HTTPS proxy on %s", addr)
+	a.logger.Printf("Starting Armor Proxy TLS listener on %s", addr)
 	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
