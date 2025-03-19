@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -15,7 +14,8 @@ import (
 	"time"
 
 	"github.com/akos011221/armor/ca"
-	"github.com/akos011221/armor/filter"
+	"github.com/akos011221/armor/helpers"
+	"github.com/akos011221/armor/plugins"
 )
 
 // ArmorProxy represents MITM (man-in-the-middle) proxy.
@@ -174,10 +174,31 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.config.Verbose {
 		a.logger.Printf("Received request: %s %s", r.Method, r.URL)
 	}
+	// Create a new plugin manager and factory
+	manager := plugins.NewArmorPluginManager()
+	factory := plugins.NewArmorPluginFactory()
 
-	// Apply filters
-	if filter.ApplyFilter(filter.DefaultFilters(), w, r) {
-		a.logger.Printf("Blocked request to %s", r.Host)
+	// Configurations for all plugins, keys are the plugin names
+	// Later, this will be loaded from a file
+	pluginsCfg := map[string]any{
+		"blocklist": map[string]bool{
+			"facebook.com": true,
+		},
+	}
+
+	// Create a blocklist plugin via the factory
+	blocklistPlugin, err := factory.CreatePlugin("blocklist", pluginsCfg)
+	if err != nil {
+		a.logger.Printf("Error creating blocklist plugin: %v", err)
+	}
+
+	// Register the plugin with the manager
+	manager.Register(blocklistPlugin)
+
+	// Use the plugin manager to process the request before it's handled
+	if err := manager.ProcessRequest(r); err != nil {
+		a.logger.Printf("Request failed or was cancelled: %v", err)
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
@@ -364,10 +385,7 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 	defer a.mu.Unlock()
 
 	// Remove the port from the request host
-	var hostWithoutPort string
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		hostWithoutPort = h
-	}
+	hostWithoutPort := helpers.HostWithoutPort(host)
 
 	// Try the cache first
 	if cert, exists := a.certCache[hostWithoutPort]; exists {
