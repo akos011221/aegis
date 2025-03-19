@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -15,7 +14,8 @@ import (
 	"time"
 
 	"github.com/akos011221/armor/ca"
-	"github.com/akos011221/armor/filter"
+	"github.com/akos011221/armor/helpers"
+	"github.com/akos011221/armor/plugin"
 )
 
 // ArmorProxy represents MITM (man-in-the-middle) proxy.
@@ -175,8 +175,8 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.logger.Printf("Received request: %s %s", r.Method, r.URL)
 	}
 
-	// Apply filters
-	if filter.ApplyFilter(filter.DefaultFilters(), w, r) {
+	// Apply plugins
+	if plugin.(plugin.Blocklist(), w, r) {
 		a.logger.Printf("Blocked request to %s", r.Host)
 		return
 	}
@@ -364,10 +364,7 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 	defer a.mu.Unlock()
 
 	// Remove the port from the request host
-	var hostWithoutPort string
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		hostWithoutPort = h
-	}
+	hostWithoutPort := helpers.HostWithoutPort(host)
 
 	// Try the cache first
 	if cert, exists := a.certCache[hostWithoutPort]; exists {
