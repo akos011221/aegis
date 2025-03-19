@@ -1,46 +1,39 @@
 package plugins
 
 import (
-	"bufio"
-	"fmt"
 	"net/http"
-	"os"
+	"strings"
 
 	"github.com/akos011221/armor/helpers"
 )
 
-type Blocklist struct {
-	Blocklist map[string]struct{}
+// BlocklistPlugin holds a slice if blocked hosts.
+type BlocklistPlugin struct {
+	blocklist map[string]bool
 }
 
-// NewBlocklist creates a new Blocklist from the given file.
-func NewBlocklist(f *os.File) *Blocklist {
-	b := &Blocklist{
-		Blocklist: make(map[string]struct{}),
+// NewBlocklistPlugin creates a BlocklistPlugin with the provided list.
+func NewBlocklistPlugin(blocklist map[string]bool) *BlocklistPlugin {
+	return &BlocklistPlugin{blocklist: blocklist}
+}
+
+// Name returns the plugin's name.
+func (bp *BlocklistPlugin) Name() string {
+	return "blocklist"
+}
+
+// ProcessRequest checks if the request URL constains a blocked host.
+func (bp *BlocklistPlugin) ProcessRequest(r *http.Request) (ProcessResult, error) {
+	// Since the plugin has to check the host, it has to remove the port from req.Host
+	host := strings.TrimSpace(helpers.HostWithoutPort(r.Host))
+
+	if _, ok := bp.blocklist[host]; ok {
+		return Cancel, nil
 	}
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		b.Blocklist[scanner.Text()] = struct{}{}
-	}
-
-	return b
+	return Continue, nil
 }
 
-// Process processes the Blocklist plugin for the given request.
-func (b *Blocklist) Process(w http.ResponseWriter, r *http.Request) {
-	hostWithoutPort := helpers.HostWithoutPort(r.Host)
-
-	if _, ok := b.Blocklist[hostWithoutPort]; ok {
-		http.Error(w, fmt.Sprintf("%s by %s plugin", b.ActionDescription(), b.Name()), http.StatusForbidden)
-		return
-	}
-}
-
-func (b *Blocklist) Name() string {
-	return "Blocklist"
-}
-
-func (b *Blocklist) ActionDescription() string {
-	return "Access denied"
+// ProcessResponse does nothing, let's the response pass.
+func (bp *BlocklistPlugin) ProcessResponse(r *http.Response) (ProcessResult, error) {
+	return Continue, nil
 }
