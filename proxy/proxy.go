@@ -199,7 +199,7 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// If a plugin cancelled (blocked) the request, then its name is
 		// stored in the pluginName variable
 		a.logger.Printf("Plugin %s cancelled the request", pluginName)
-		http.Error(w, err.Error(), http.StatusForbidden)
+		http.Error(w, fmt.Sprintf("Request was cancelled by %s", pluginName), http.StatusForbidden)
 		return
 	}
 
@@ -448,7 +448,7 @@ func isClosedConnError(err error) bool {
 }
 
 // runPlugins creates the plugin manager, plugin factory and takes care of processing the plugins.
-func runPlugins(r interface{}, pluginNames []string, pluginsConfig map[string]any) (string, plugin.ProcessResult, error) {
+func runPlugins(r any, pluginNames []string, pluginsConfig map[string]any) (string, plugin.ProcessResult, error) {
 	// Plugin manager takes care of registrating and running the plugins
 	manager := plugin.NewArmorPluginManager()
 	// Plugin factory takes care of initializing a new instance of a plugin
