@@ -8,10 +8,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Run docker compose
         uses: hoverkraft-tech/compose-action@v2.0.1
-        env:
-          CLIENT_COMMAND: "apk add --no-cache ca-certificates curl && mkdir -p /usr/local/share/ca-certificates && cp /certs/ca.crt /usr/local/share/ca-certificates/ca.crt && update-ca-certificates && sleep 3 && curl -v -x http://proxy:4090 https://facebook.com"
         with:
           compose-file: "docker-compose.yml"
