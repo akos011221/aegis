@@ -32,9 +32,9 @@ jobs:
       - name: Verify expected outcome
         run: |
           # Check if curl returned the expected result
-          CURL_RESULT=$(docker logs armor_client)
+          docker logs armor_client 2>&1 | tee logs.txt
 
-          if echo "$CURL_RESULT" | grep -q "HTTP/1.1 403 Forbidden"; then
+          if cat logs.txt | grep -q "HTTP/1.1 403 Forbidden"; then
             echo "Results look fine, as it was blocked with HTTP 403"
             exit 1
           else
