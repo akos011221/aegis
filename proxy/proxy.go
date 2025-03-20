@@ -200,7 +200,7 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Request is cancelled not only if it's blocked by a plugin,
 		// but also if there was an error in the processing
-		a.logger.Printf("Error while processing : v", err)
+		a.logger.Printf("Error while processing : %v", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
