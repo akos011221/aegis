@@ -30,9 +30,6 @@ jobs:
       - name: Build and start services
         run: |
           docker-compose -f docker-compose.yml up --build -d
-      
-      - name: Wait for services to start
-        run: sleep 30
 
       - name: Check client logs
         run: docker-compose logs client
