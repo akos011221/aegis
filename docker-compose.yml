@@ -6,10 +6,10 @@ services:
     container_name: armor_proxy
     ports:
       - "8080:8080" #Port mapping between host and container
-    volumes:
-      - ./certs:/certs #Persist certificates between runs
     networks:
       - very_secure
+    volumes:
+      - shared:/certs
 
   client:
     image: alpine:latest
@@ -18,11 +18,14 @@ services:
     command: ["sh", "-c", "${CLIENT_COMMAND}"]
     depends_on:
       - proxy #Wait for proxy to start
-    volumes:
-      - ./certs:/certs #Share certs directory to install the CA certificate
     networks:
       - very_secure
+    volumes:
+      - shared:/certs
 
 networks:
   very_secure:
     driver: bridge
+
+volumes:
+  shared_data:
