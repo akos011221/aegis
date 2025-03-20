@@ -1,0 +1,18 @@
+name: Simulate client sending HTTP traffic to proxy
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run docker compose
+        env:
+          CLIENT_COMMAND: "apk add --no-cache ca-certificates curl && mkdir -p /usr/local/share/ca-certificates && cp /certs/ca.crt /usr/local/share/ca-certificates/ca.crt && update-ca-certificates && sleep 3 && curl -v -x http://proxy:4090 https://facebook.com"
+        run: docker-compose -f tests/docker-compose.yml up --build
+
+      - name: Clean up docker compose resources
+        run: docker-compose -f tests/docker-compose.yml down
