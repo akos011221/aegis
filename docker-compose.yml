@@ -28,4 +28,4 @@ networks:
     driver: bridge
 
 volumes:
-  shared_data:
+  shared:
