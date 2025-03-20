@@ -10,6 +10,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o armor main.go
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /app/armor /usr/local/bin/armor
-COPY --from=builder /app/certs /certs
+#COPY --from=builder /app/certs /certs
 EXPOSE 4090 4091
 CMD ["armor"]
