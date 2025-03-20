@@ -37,6 +37,9 @@ type ArmorProxy struct {
 	// logger provides organized logging
 	logger *log.Logger
 
+	// pluginManager manages the enabled plugins
+	pluginManager *plugin.ArmorPluginManager
+
 	// config contains the proxy's configuration options
 	config *ProxyConfig
 }
@@ -136,13 +139,19 @@ func NewProxy(p *ProxyConfig) (*ArmorProxy, error) {
 
 	logger := log.New(p.LogDestination, "ArmorProxy: ", log.LstdFlags)
 
+	manager, err := initPlugins(p.EnabledPlugins, p.PluginsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create plugin manager: %w", err)
+	}
+
 	return &ArmorProxy{
-		caCert:     *caCert,
-		caCertPool: caCertPool,
-		certCache:  make(map[string]*tls.Certificate),
-		mu:         sync.RWMutex{},
-		logger:     logger,
-		config:     p,
+		caCert:        *caCert,
+		caCertPool:    caCertPool,
+		certCache:     make(map[string]*tls.Certificate),
+		mu:            sync.RWMutex{},
+		logger:        logger,
+		pluginManager: manager,
+		config:        p,
 	}, nil
 }
 
@@ -184,10 +193,10 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// We run the plugins, if there's any.
-	// pluginName is the name of the plugin that errored or cancelled the request, if there as any
-	// outcome is the result of the processing
-	// err is the error if there was any, while processing the plugins
-	pluginName, outcome, err := runPlugins(r, a.config.EnabledPlugins, a.config.PluginsConfig)
+	// outcome is the action that the plugins decided to do with the request.
+	// pluginName is the name of the plugin if there was any that failed or cancelled teh request.
+	// err is the error, if there was any. In that case, the request is also cancelled.
+	outcome, pluginName, err := runPlugins(r, a.pluginManager)
 	if err != nil {
 		// Request is cancelled not only if it's blocked by a plugin,
 		// but also if there was an error in the processing
@@ -447,8 +456,8 @@ func isClosedConnError(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || strings.Contains(err.Error(), "use of closed network connection")
 }
 
-// runPlugins creates the plugin manager, plugin factory and takes care of processing the plugins.
-func runPlugins(r any, pluginNames []string, pluginsConfig map[string]any) (string, plugin.ProcessResult, error) {
+// initPlugins initializes the plugin manager and factory with the configuration provided to the proxy instance.
+func initPlugins(pluginNames []string, pluginsConfig map[string]any) (*plugin.ArmorPluginManager, error) {
 	// Plugin manager takes care of registrating and running the plugins
 	manager := plugin.NewArmorPluginManager()
 	// Plugin factory takes care of initializing a new instance of a plugin
@@ -459,9 +468,7 @@ func runPlugins(r any, pluginNames []string, pluginsConfig map[string]any) (stri
 	for _, pluginName := range pluginNames {
 		p, err := factory.CreatePlugin(pluginName, pluginsConfig)
 		if err != nil {
-			// Probably shouldn't cancel the request in this case,
-			// but now it does
-			return pluginName, plugin.Cancel, fmt.Errorf("plugin factory failed to create %s", pluginName)
+			return nil, fmt.Errorf("plugin factory failed to create %s", pluginName)
 		}
 		plugins = append(plugins, p)
 	}
@@ -471,17 +478,22 @@ func runPlugins(r any, pluginNames []string, pluginsConfig map[string]any) (stri
 		manager.Register(plugin)
 	}
 
+	return manager, nil
+}
+
+// runPlugins creates the plugin manager, plugin factory and takes care of processing the plugins.
+func runPlugins(r any, manager *plugin.ArmorPluginManager) (plugin.ProcessResult, string, error) {
 	// Check if "r" is a request, if yes, do the request processing with the plugins
 	if req, ok := r.(*http.Request); ok {
 		// Handle over the plugins to the manager, which will call each
 		// plugin's process method
 		p, outcome, err := manager.ProcessRequest(req)
 		if err != nil {
-			return p, plugin.Cancel, fmt.Errorf("error while processing plugin %s: %v", p, err)
+			return plugin.Cancel, p, fmt.Errorf("error while processing plugin %s: %w", p, err)
 		}
 		if outcome == plugin.Cancel {
-			return p, plugin.Cancel, nil
+			return plugin.Cancel, p, nil
 		}
 	}
-	return "", plugin.Continue, nil
+	return plugin.Continue, "", nil
 }
