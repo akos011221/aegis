@@ -483,11 +483,13 @@ func initPlugins(pluginNames []string, pluginsConfig map[string]any) (*plugin.Ar
 
 // runPlugins creates the plugin manager, plugin factory and takes care of processing the plugins.
 func runPlugins(r any, manager *plugin.ArmorPluginManager) (plugin.ProcessResult, string, error) {
-	// Check if "r" is a request, if yes, do the request processing with the plugins
-	if req, ok := r.(*http.Request); ok {
+	// We extract the concrete type via type assertion, so we can match for types
+	// and do the plugin processing for each type.
+	switch v := r.(type) {
+	case *http.Request:
 		// Handle over the plugins to the manager, which will call each
 		// plugin's process method
-		p, outcome, err := manager.ProcessRequest(req)
+		p, outcome, err := manager.ProcessRequest(v)
 		if err != nil {
 			return plugin.Cancel, p, fmt.Errorf("error while processing plugin %s: %w", p, err)
 		}
