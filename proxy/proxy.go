@@ -192,11 +192,11 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.logger.Printf("Received request: %s %s", r.Method, r.URL)
 	}
 
-	// We run the plugins, if there's any.
-	// outcome is the action that the plugins decided to do with the request.
+	// If there's any active plugin, run them
 	// pluginName is the name of the plugin if there was any that failed or cancelled teh request.
-	// err is the error, if there was any. In that case, the request is also cancelled.
-	outcome, pluginName, err := runPlugins(r, a.pluginManager)
+	// outcome is the action that the plugins decided to do with the request.
+	// err is the error, if there was any. This also cancels the request.
+	pluginName, outcome, err := a.pluginManager.ProcessRequest(r)
 	if err != nil {
 		// Request is cancelled not only if it's blocked by a plugin,
 		// but also if there was an error in the processing
@@ -479,23 +479,4 @@ func initPlugins(pluginNames []string, pluginsConfig map[string]any) (*plugin.Ar
 	}
 
 	return manager, nil
-}
-
-// runPlugins creates the plugin manager, plugin factory and takes care of processing the plugins.
-func runPlugins(r any, manager *plugin.ArmorPluginManager) (plugin.ProcessResult, string, error) {
-	// We extract the concrete type via type assertion, so we can match for types
-	// and do the plugin processing for each type.
-	switch v := r.(type) {
-	case *http.Request:
-		// Handle over the plugins to the manager, which will call each
-		// plugin's process method
-		p, outcome, err := manager.ProcessRequest(v)
-		if err != nil {
-			return plugin.Cancel, p, fmt.Errorf("error while processing plugin %s: %w", p, err)
-		}
-		if outcome == plugin.Cancel {
-			return plugin.Cancel, p, nil
-		}
-	}
-	return plugin.Continue, "", nil
 }
