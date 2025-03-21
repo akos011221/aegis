@@ -20,12 +20,12 @@ jobs:
           docker-compose --version
       
       - name: Build and start services
+        env:
+          CMD: apk add --no-cache ca-certificates curl && mkdir -p /usr/local/share/ca-certificates && while [ ! -f /certs/ca.crt ]; do echo 'Waiting for CA certificate...'; sleep 2; done && cp /certs/ca.crt /usr/local/share/ca-certificates/ca.crt && update-ca-certificates && sleep 3 && curl -v -x http://proxy:4090 -X TRACE https://google.com.com
         run: |
           docker-compose -f docker-compose.yml up --build -d --wait
       
       - name: Check client logs
-        env:
-          CMD: apk add --no-cache ca-certificates curl && mkdir -p /usr/local/share/ca-certificates && while [ ! -f /certs/ca.crt ]; do echo 'Waiting for CA certificate...'; sleep 2; done && cp /certs/ca.crt /usr/local/share/ca-certificates/ca.crt && update-ca-certificates && sleep 3 && curl -v -x http://proxy:4090 -X TRACE https://google.com.com
         run: docker-compose logs client
 
       - name: Verify expected outcome
