@@ -193,9 +193,9 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If there's any active plugin, run them
-	// pluginName is the name of the plugin if there was any that failed or cancelled teh request.
-	// status is the HTTP status code that the first matched plugin wants to do with the request.
-	// err is the error, if there was any. This also cancels the request.
+	// pluginName is the name of the plugin if there was any that returned 4xx
+	// status is the HTTP status code that was decided by the plugins
+	// err is the error, if there was any, in this case it returns with http.StatusServiceUnavailable
 	pluginName, status, err := a.pluginManager.ProcessRequest(r)
 	if err != nil {
 		// There was an error during a plugin's processing
