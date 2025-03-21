@@ -12,7 +12,7 @@ type BlocklistPlugin struct {
 	blocklist map[string]bool
 }
 
-// NewBlocklistPlugin creates a BlocklistPlugin with the provided list.
+// NewBlocklistPlugin creates a BlocklistPlugin with the provided map.
 func NewBlocklistPlugin(blocklist map[string]bool) *BlocklistPlugin {
 	return &BlocklistPlugin{blocklist: blocklist}
 }
