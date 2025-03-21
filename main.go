@@ -28,6 +28,9 @@ func main() {
 			"blocklist": map[string]bool{
 				"facebook.com": true,
 			},
+			"block_methods": map[string]bool{
+				"TRACE": true,
+			},
 		},
 		LogDestination: os.Stdout,
 	})

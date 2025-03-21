@@ -101,13 +101,25 @@ func (apf *ArmorPluginFactory) CreatePlugin(name string, config map[string]any) 
 		if !ok {
 			return nil, errors.New("missing blocklist configuration in the passed config map")
 		}
-		// Make sure the value is a map[string]bool{}
+		// Make sure the value is a map[string]bool
 		blockedHosts, ok := value.(map[string]bool)
 		if !ok {
-			return nil, errors.New("blocklist configuration must be map[string]bool{}")
+			return nil, errors.New("blocklist configuration must be map[string]bool")
 		}
-		// Create a new blocklist plugin with the provided configuration
 		return NewBlocklistPlugin(blockedHosts), nil
+
+	case "block_methods":
+		// Look for the block_methods configuration in the passed map
+		value, ok := config["block_methods"]
+		if !ok {
+			return nil, errors.New("missing block_methods configuration in the passed config map")
+		}
+		// Make sure the value is a map[string]bool
+		blockedMethods, ok := value.(map[string]bool)
+		if !ok {
+			return nil, errors.New("block_methods configuration must be map[string]bool")
+		}
+		return NewBlockMethodsPlugin(blockedMethods), nil
 
 	default:
 		return nil, fmt.Errorf("unknown plugin name: %s", name)
