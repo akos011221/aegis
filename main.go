@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -29,7 +30,8 @@ func main() {
 				"facebook.com": true,
 			},
 			"block_methods": map[string]bool{
-				"TRACE": true,
+				http.MethodTrace: true,
+				http.MethodPut:   true,
 			},
 		},
 		LogDestination: os.Stdout,
