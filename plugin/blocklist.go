@@ -28,7 +28,7 @@ func (bp *BlocklistPlugin) ProcessRequest(r *http.Request) (int, error) {
 	host := strings.TrimSpace(helpers.HostWithoutPort(r.Host))
 
 	if _, ok := bp.blocklist[host]; ok {
-		return http.StatusUnauthorized, nil
+		return http.StatusForbidden, nil
 	}
 	return http.StatusOK, nil
 }
