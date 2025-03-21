@@ -18,14 +18,14 @@ func (bmp *BlockMethodsPlugin) Name() string {
 }
 
 // ProcessRequest checks if the request method is blocked.
-func (bpm *BlockMethodsPlugin) ProcessRequest(r *http.Request) (ProcessResult, error) {
+func (bpm *BlockMethodsPlugin) ProcessRequest(r *http.Request) (int, error) {
 	if _, ok := bpm.methods[r.Method]; ok {
-		return Cancel, nil
+		return http.StatusMethodNotAllowed, nil
 	}
-	return Continue, nil
+	return http.StatusOK, nil
 }
 
 // ProcessResponse does nothing, let's the response pass.
-func (bpm *BlockMethodsPlugin) ProcessResponse(r *http.Response) (ProcessResult, error) {
-	return Continue, nil
+func (bpm *BlockMethodsPlugin) ProcessResponse(r *http.Response) (int, error) {
+	return http.StatusOK, nil
 }

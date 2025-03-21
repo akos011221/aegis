@@ -193,22 +193,20 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If there's any active plugin, run them
-	// pluginName is the name of the plugin if there was any that failed or cancelled teh request.
-	// outcome is the action that the plugins decided to do with the request.
-	// err is the error, if there was any. This also cancels the request.
-	pluginName, outcome, err := a.pluginManager.ProcessRequest(r)
+	// pluginName is the name of the plugin if there was any that returned 4xx
+	// status is the HTTP status code that was decided by the plugins
+	// err is the error, if there was any, in this case it returns with http.StatusServiceUnavailable
+	pluginName, status, err := a.pluginManager.ProcessRequest(r)
 	if err != nil {
-		// Request is cancelled not only if it's blocked by a plugin,
-		// but also if there was an error in the processing
-		a.logger.Printf("Error while processing : %v", err)
-		http.Error(w, err.Error(), http.StatusForbidden)
+		// There was an error during a plugin's processing
+		a.logger.Printf("Error sent by %s: %v", pluginName, err)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	if outcome == plugin.Cancel {
-		// If a plugin cancelled (blocked) the request, then its name is
-		// stored in the pluginName variable
-		a.logger.Printf("Plugin %s cancelled the request", pluginName)
-		http.Error(w, fmt.Sprintf("Request was cancelled by %s", pluginName), http.StatusForbidden)
+	if status >= 400 && status < 500 {
+		// If any plugin returns a 4xx error, terminate the request
+		a.logger.Printf("Plugin %s terminated the request", pluginName)
+		http.Error(w, fmt.Sprintf("Request was terminated by %s", pluginName), status)
 		return
 	}
 

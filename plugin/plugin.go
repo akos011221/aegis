@@ -6,29 +6,18 @@ import (
 	"net/http"
 )
 
-// ProcessResult is an alias for int, used it to represent
-// the outcome of processing a request or response by a plugin.
-type ProcessResult int
-
-// Possible values for ProcessResult type.
-// Using iota to automatically assign values to the constants.
-const (
-	Continue ProcessResult = iota
-	Cancel
-)
-
 // Plugin is the interface that every Armor Plugin must implement.
 type ArmorPlugin interface {
 	// Name returns the plugin's name.
 	Name() string
 
 	// ProcessRequest is called before forwading the request.
-	// It can modify the request or cancel it by returning an error.
-	ProcessRequest(r *http.Request) (ProcessResult, error)
+	// It can modify the request or terminate it.
+	ProcessRequest(r *http.Request) (int, error)
 
 	// ProcessResponse is called after receiving the response.
-	// It can modify the response or cancel it by returning an error.
-	ProcessResponse(r *http.Response) (ProcessResult, error)
+	// It can modify the response or terminate it.
+	ProcessResponse(r *http.Response) (int, error)
 }
 
 // ArmorPluginManager maintains a list of plugins and calls them.
@@ -49,34 +38,34 @@ func (apm *ArmorPluginManager) Register(ap ArmorPlugin) {
 }
 
 // ProcessRequest iterates through all registered plugins and calls
-// their ProcessRequest method. If any plugin returns Cancel, the
-// request is cancelled and the error is returned.
-func (apm *ArmorPluginManager) ProcessRequest(r *http.Request) (string, ProcessResult, error) {
+// their ProcessRequest method. If any plugin returns 4xx, the
+// request is terminated and the error is returned.
+func (apm *ArmorPluginManager) ProcessRequest(r *http.Request) (string, int, error) {
 	for _, plugin := range apm.plugins {
 
-		outcome, err := plugin.ProcessRequest(r)
+		status, err := plugin.ProcessRequest(r)
 
 		if err != nil {
-			return plugin.Name(), Cancel, fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
+			return plugin.Name(), http.StatusServiceUnavailable, fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
 		}
-		if outcome == Cancel {
-			return plugin.Name(), Cancel, nil
+		if status >= 400 && status < 500 {
+			return plugin.Name(), int(status), nil
 		}
 	}
-	return "", Continue, nil
+	return "", http.StatusOK, nil
 }
 
 // ProcessResponse iterates through all registered plugins and calls
-// their ProcessResponse method. If any plugin returns Cancel, the
-// response is cancelled and the error is returned.
+// their ProcessResponse method. If any plugin returns 4xx, the
+// response is terminated and the error is returned.
 func (apm *ArmorPluginManager) ProcessResponse(r *http.Response) error {
 	for _, plugin := range apm.plugins {
-		outcome, err := plugin.ProcessResponse(r)
+		status, err := plugin.ProcessResponse(r)
 		if err != nil {
 			return fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
 		}
-		if outcome == Cancel {
-			return fmt.Errorf("plugin %s cancelled the response", plugin.Name())
+		if status >= 400 && status < 500 {
+			return err
 		}
 	}
 	return nil
