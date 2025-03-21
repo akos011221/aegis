@@ -23,17 +23,17 @@ func (bp *BlocklistPlugin) Name() string {
 }
 
 // ProcessRequest checks if the request URL constains a blocked host.
-func (bp *BlocklistPlugin) ProcessRequest(r *http.Request) (ProcessResult, error) {
+func (bp *BlocklistPlugin) ProcessRequest(r *http.Request) (int, error) {
 	// Since the plugin has to check the host, it has to remove the port from req.Host
 	host := strings.TrimSpace(helpers.HostWithoutPort(r.Host))
 
 	if _, ok := bp.blocklist[host]; ok {
-		return Cancel, nil
+		return http.StatusUnauthorized, nil
 	}
-	return Continue, nil
+	return http.StatusOK, nil
 }
 
 // ProcessResponse does nothing, let's the response pass.
-func (bp *BlocklistPlugin) ProcessResponse(r *http.Response) (ProcessResult, error) {
-	return Continue, nil
+func (bp *BlocklistPlugin) ProcessResponse(r *http.Response) (int, error) {
+	return http.StatusOK, nil
 }
