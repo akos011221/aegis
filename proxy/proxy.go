@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -196,7 +198,7 @@ func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// pluginName is the name of the plugin if there was any that returned 4xx
 	// status is the HTTP status code that was decided by the plugins
 	// err is the error, if there was any, in this case it returns with http.StatusServiceUnavailable
-	pluginName, status, err := a.pluginManager.ProcessRequest(r)
+	pluginName, status, err := a.pluginManager.ProcessConnectReq(r)
 	if err != nil {
 		// There was an error during a plugin's processing
 		a.logger.Printf("Error sent by %s: %v", pluginName, err)
@@ -299,12 +301,44 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer wg.Done()
 
-		tee := io.TeeReader(tlsClientConn, a.config.LogDestination)
+		// Buffer will hold the request
+		var b bytes.Buffer
+		tee := io.TeeReader(tlsClientConn, &b)
 
-		if _, err := io.Copy(targetConn, tee); err != nil && !isClosedConnError(err) {
+		// Parse the request, copying it to the buffer
+		r, err := http.ReadRequest(bufio.NewReader(tee))
+		if err != nil {
+			a.logger.Printf("Error reading request: %v", err)
+			return
+		}
+
+		pluginName, status, err := a.pluginManager.ProcessMitmReq(r)
+		if err != nil {
+			// There was an error during a plugin's processing
+			a.logger.Printf("Error sent by %s: %v", pluginName, err)
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			targetConn.Close()
+			return
+		}
+		if status >= 400 && status < 500 {
+			// If any plugin returns a 4xx error, terminate the request
+			a.logger.Printf("Plugin %s terminated the request", pluginName)
+			http.Error(w, fmt.Sprintf("Request was terminated by %s", pluginName), status)
+			targetConn.Close()
+			return
+		}
+
+		// First copy the buffered data to the target
+		if _, err := io.Copy(targetConn, &b); err != nil {
+			a.logger.Printf("Error copying buffered data to target: %v", err)
+			return
+		}
+
+		// And then copy the rest of the client data
+		if _, err := io.Copy(targetConn, tlsClientConn); err != nil && !isClosedConnError(err) {
 			a.logger.Printf("Error copying data from client to target: %v", err)
 		}
-		// Close the target connection to signal EOF
+
 		targetConn.Close()
 	}()
 

@@ -22,8 +22,8 @@ func (bp *BlocklistPlugin) Name() string {
 	return "blocklist"
 }
 
-// ProcessRequest checks if the request URL constains a blocked host.
-func (bp *BlocklistPlugin) ProcessRequest(r *http.Request) (int, error) {
+// ProcessConnectRequest checks if the request URL constains a blocked host.
+func (bp *BlocklistPlugin) ProcessConnectReq(r *http.Request) (int, error) {
 	// Since the plugin has to check the host, it has to remove the port from req.Host
 	host := strings.TrimSpace(helpers.HostWithoutPort(r.Host))
 
@@ -33,7 +33,7 @@ func (bp *BlocklistPlugin) ProcessRequest(r *http.Request) (int, error) {
 	return http.StatusOK, nil
 }
 
-// ProcessResponse does nothing, let's the response pass.
-func (bp *BlocklistPlugin) ProcessResponse(r *http.Response) (int, error) {
+// ProcessMitmReq does nothing, the plugin is only interested in the CONNECT request.
+func (bp *BlocklistPlugin) ProcessMitmReq(r *http.Request) (int, error) {
 	return http.StatusOK, nil
 }
