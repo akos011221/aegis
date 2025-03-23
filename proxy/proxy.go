@@ -298,6 +298,20 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// Copy data from client to target server
 	go func() {
 		defer wg.Done()
+
+		tee := io.TeeReader(tlsClientConn, targetConn)
+
+		func() {
+			buff := make([]byte, 1024)
+			for {
+				_, err := tee.Read(buff)
+				if err == io.EOF {
+					break
+				}
+				a.logger.Printf("Client -> Target: %s", string(buff))
+			}
+		}()
+
 		if _, err := io.Copy(targetConn, tlsClientConn); err != nil && !isClosedConnError(err) {
 			a.logger.Printf("Error copying data from client to target: %v", err)
 		}
