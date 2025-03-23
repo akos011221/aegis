@@ -299,20 +299,9 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer wg.Done()
 
-		tee := io.TeeReader(tlsClientConn, targetConn)
+		tee := io.TeeReader(tlsClientConn, a.config.LogDestination)
 
-		func() {
-			buff := make([]byte, 1024)
-			for {
-				_, err := tee.Read(buff)
-				if err == io.EOF {
-					break
-				}
-				a.logger.Printf("Client -> Target: %s", string(buff))
-			}
-		}()
-
-		if _, err := io.Copy(targetConn, tlsClientConn); err != nil && !isClosedConnError(err) {
+		if _, err := io.Copy(targetConn, tee); err != nil && !isClosedConnError(err) {
 			a.logger.Printf("Error copying data from client to target: %v", err)
 		}
 		// Close the target connection to signal EOF
