@@ -24,7 +24,7 @@ func main() {
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		AllowInsecure:  false,
-		EnabledPlugins: []string{"blocklist"},
+		EnabledPlugins: []string{"blocklist", "block_methods"},
 		PluginsConfig: map[string]any{
 			"blocklist": map[string]bool{
 				"facebook.com": true,

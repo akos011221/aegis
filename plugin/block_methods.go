@@ -1,6 +1,8 @@
 package plugin
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // BlockMethodPlugin holds a slice if blocked HTTP methods.
 type BlockMethodsPlugin struct {

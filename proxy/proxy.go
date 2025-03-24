@@ -239,7 +239,7 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		// Not all http.ResponseWriter implementations support hijacking
-		a.logger.Printf("Error: ResponsrWriter doesn't support hijacking.")
+		a.logger.Printf("Error: ResponseWriter doesn't support hijacking.")
 		http.Error(w, "Hijacking is not supported", http.StatusInternalServerError)
 		return
 	}
@@ -313,32 +313,26 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		}
 
 		pluginName, status, err := a.pluginManager.ProcessMitmReq(r)
+		fmt.Printf("ProcessMitmReq returned code is: %d\n", status)
 		if err != nil {
-			// There was an error during a plugin's processing
 			a.logger.Printf("Error sent by %s: %v", pluginName, err)
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			targetConn.Close()
-			return
 		}
 		if status >= 400 && status < 500 {
-			// If any plugin returns a 4xx error, terminate the request
 			a.logger.Printf("Plugin %s terminated the request", pluginName)
 			http.Error(w, fmt.Sprintf("Request was terminated by %s", pluginName), status)
 			targetConn.Close()
-			return
 		}
-
 		// First copy the buffered data to the target
 		if _, err := io.Copy(targetConn, &b); err != nil {
 			a.logger.Printf("Error copying buffered data to target: %v", err)
-			return
 		}
 
 		// And then copy the rest of the client data
 		if _, err := io.Copy(targetConn, tlsClientConn); err != nil && !isClosedConnError(err) {
 			a.logger.Printf("Error copying data from client to target: %v", err)
 		}
-
 		targetConn.Close()
 	}()
 
@@ -348,7 +342,6 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(tlsClientConn, targetConn); err != nil && !isClosedConnError(err) {
 			a.logger.Printf("Error copying data from target to client: %v", err)
 		}
-		// Close the client connection to signal EOF
 		tlsClientConn.Close()
 	}()
 
