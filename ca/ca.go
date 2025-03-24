@@ -66,7 +66,6 @@ func DefaultCAConfig() CAConfig {
 //
 // Returns an error if the certificate generation or saving fails.
 func GenerateRootCA() error {
-	// Use default configuration
 	return GenerateRootCAWithConfig(DefaultCAConfig())
 }
 
@@ -75,7 +74,6 @@ func GenerateRootCA() error {
 //
 // Returns an error if the certificate generation or saving fails.
 func GenerateRootCAWithConfig(config CAConfig) error {
-	// Create directories if they don't exist
 	certDir := filepath.Dir(config.CertPath)
 	keyDir := filepath.Dir(config.KeyPath)
 
@@ -87,24 +85,20 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 		return fmt.Errorf("failed to create key directory: %w", err)
 	}
 
-	// Generate a private key for the CA
-	// RSA is used for broad compatibility
 	priv, err := rsa.GenerateKey(rand.Reader, config.KeyBits)
 	if err != nil {
 		return fmt.Errorf("failed to generate private key: %w", err)
 	}
 
-	// Current time for certificate validity period calculation
 	now := time.Now()
 
-	// Define the CA certificate template
 	template := x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()), // Unique identifier based on current time
+		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
 			Organization: []string{config.Organization},
 			CommonName:   config.CommonName,
 		},
-		NotBefore:             now.Add(-1 * time.Hour), // Backdate it to avoid clock skew issues
+		NotBefore:             now.Add(-1 * time.Hour), // backdate it to avoid clock skew issues
 		NotAfter:              now.Add(config.Validity),
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
@@ -112,25 +106,23 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 		MaxPathLen:            1,
 	}
 
-	// Create self-signed CA certificate (signed by its own key)
-	// PEM is base64 encoded format with headers and footers
+	// create self-signed CA certificate (signed by its own key)
 	derBytes, err := x509.CreateCertificate(
 		rand.Reader,
-		&template, // Certificate template
-		&template, // Parent is same as template, because self-signed
+		&template, // certificate template
+		&template, // parent is same as template, because self-signed
 		&priv.PublicKey,
-		priv, // Certificate will be signed by this private key
+		priv, // certificate will be signed by this private key
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create CA certificate: %w", err)
 	}
 
-	// Save the certificate in PEM format
 	certOut, err := os.Create(config.CertPath)
 	if err != nil {
 		return fmt.Errorf("failed to create certificate file: %w", err)
 	}
-	defer certOut.Close() // File is closed even if encoding fails
+	defer certOut.Close()
 
 	err = pem.Encode(certOut, &pem.Block{
 		Type:  "CERTIFICATE",
@@ -140,13 +132,11 @@ func GenerateRootCAWithConfig(config CAConfig) error {
 		return fmt.Errorf("failed to encode certificate to PEM: %w", err)
 	}
 
-	// Save the private key in PEM format
-	// PKCS#1 format is used for RSA keys
 	keyOut, err := os.OpenFile(config.KeyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create key file: %w", err)
 	}
-	defer keyOut.Close() // File is closed even if encoding fails
+	defer keyOut.Close()
 
 	err = pem.Encode(keyOut, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
@@ -166,7 +156,6 @@ func LoadRootCA() (*tls.Certificate, error) {
 
 // LoadRootCAFromPath loads a CA certificate and key from specified file paths.
 func LoadRootCAFromPath(certPath, keyPath string) (*tls.Certificate, error) {
-	// Check if files exist
 	if _, err := os.Stat(certPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("certificate file not found: %s", certPath)
 	}
@@ -175,31 +164,27 @@ func LoadRootCAFromPath(certPath, keyPath string) (*tls.Certificate, error) {
 		return nil, fmt.Errorf("key file not found: %s", keyPath)
 	}
 
-	// Load the certificate and key pair
-	// Checks if they form a valid pair
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CA certificate and key: %w", err)
 	}
 
-	// More like a defensive check to make it future-proof
+	// more like a defensive check to make it future-proof
 	if len(cert.Certificate) == 0 {
 		return nil, fmt.Errorf("no certificate data found in %s", certPath)
 	}
 
-	// Parse the certificate to access its fields
 	parsedCert, err := x509.ParseCertificate(cert.Certificate[0])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
 	}
 
-	// Parsing (x509.ParseCertificate) is expensive, so to avoid in the future,
-	// we can use the Leaf field in tls.Certificate to store the parsed version.
-	// Leaf is a pointer to the parsed x509.Certificate; it is not set automatically
-	// by tls.LoadX509KeyPair, so we have to do it manually.
+	// parsing (x509.ParseCertificate) is expensive, to avoid it later,
+	// the Leaf field in tls.Certificate is used to store the parsed version.
+	// `Leaf` is a pointer to the parsed x509.Certificate; it is not set automatically
+	// by tls.LoadX509KeyPair
 	cert.Leaf = parsedCert
 
-	// Verify that this ia actually a CA certificate
 	if !parsedCert.IsCA {
 		return nil, fmt.Errorf("loaded certificate is not a CA certificate")
 	}
@@ -256,23 +241,19 @@ func InstallCACertificate(certPath string) string {
 
 // GenerateClientCertificate creates a client certificate signed by the CA.
 func GenerateClientCertificate(commonName string, caCert tls.Certificate, outCertPath, outKeyPath string) error {
-	// Create a private key for the client certificate
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return fmt.Errorf("failed to generate client certificate private key: %w", err)
 	}
 
-	// Parse the CA certificate.
 	// TODO: Check if I can avoid parsing by getting the Leaf field...
 	ca, err := x509.ParseCertificate(caCert.Certificate[0])
 	if err != nil {
 		return fmt.Errorf("failed to parse CA certificate: %w", err)
 	}
 
-	// For validity period
 	now := time.Now()
 
-	// Client certificate template
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
@@ -287,19 +268,17 @@ func GenerateClientCertificate(commonName string, caCert tls.Certificate, outCer
 		IsCA:                  false,
 	}
 
-	// Create client certificate signed by the CA
 	derBytes, err := x509.CreateCertificate(
 		rand.Reader,
 		&template,
 		ca, // Parent
 		&priv.PublicKey,
-		caCert.PrivateKey, // Signed with this key
+		caCert.PrivateKey,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create client certificate: %w", err)
 	}
 
-	// Create file, then save in PEM format
 	certOut, err := os.Create(outCertPath)
 	if err != nil {
 		return fmt.Errorf("failed to create client certificate: %w", err)
@@ -311,7 +290,6 @@ func GenerateClientCertificate(commonName string, caCert tls.Certificate, outCer
 		return fmt.Errorf("failed to encode client certificate to PEM: %w", err)
 	}
 
-	// Save private key in PEM format
 	keyOut, err := os.OpenFile(outKeyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create client key file: %w", err)
@@ -331,13 +309,11 @@ func GenerateClientCertificate(commonName string, caCert tls.Certificate, outCer
 
 // GenerateServerCertificate creates an in-memory server certificate signed by the CA.
 func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Certificate, error) {
-	// Generate a private key for the server certificate
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate server certificate private key: %w", err)
 	}
 
-	// Check if there's Leaf for CA, if not, then parse it
 	var ca *x509.Certificate
 	if caCert.Leaf != nil {
 		ca = caCert.Leaf
@@ -348,19 +324,16 @@ func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Ce
 		}
 	}
 
-	// Check if hostname is an IP address
 	ipAddresses := []net.IP{}
 	dnsNames := []string{hostname}
 
 	if ip := net.ParseIP(hostname); ip != nil {
 		ipAddresses = append(ipAddresses, ip)
-		// If it's an IP, don't include it as DNS name
 		dnsNames = []string{}
 	}
 
 	now := time.Now()
 
-	// Server certificate template
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(now.UnixNano()),
 		Subject: pkix.Name{
@@ -377,25 +350,22 @@ func GenerateServerCertificate(hostname string, caCert tls.Certificate) (*tls.Ce
 		IPAddresses:           ipAddresses,
 	}
 
-	// Create server certificate signed by the CA
 	derBytes, err := x509.CreateCertificate(
 		rand.Reader,
 		&template,
 		ca, // Parent
 		&priv.PublicKey,
-		caCert.PrivateKey, // Signed with this key
+		caCert.PrivateKey,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server certificate: %w", err)
 	}
 
-	// Creat in-memory certificate
 	cert := &tls.Certificate{
 		Certificate: [][]byte{derBytes},
 		PrivateKey:  priv,
 	}
 
-	// Parse certificate for immediate use
 	cert.Leaf, err = x509.ParseCertificate(derBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse generated certificate: %w", err)

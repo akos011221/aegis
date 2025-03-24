@@ -23,8 +23,7 @@ func (bp *BlocklistPlugin) Name() string {
 }
 
 // ProcessConnectRequest checks if the request URL constains a blocked host.
-func (bp *BlocklistPlugin) ProcessConnectReq(r *http.Request) (int, error) {
-	// Since the plugin has to check the host, it has to remove the port from req.Host
+func (bp *BlocklistPlugin) ProcessInitReq(r *http.Request) (int, error) {
 	host := strings.TrimSpace(helpers.HostWithoutPort(r.Host))
 
 	if _, ok := bp.blocklist[host]; ok {

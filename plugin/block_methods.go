@@ -20,7 +20,7 @@ func (bmp *BlockMethodsPlugin) Name() string {
 }
 
 // ProcessConnectRequest does nothing, the plugin is only interested in the actual client to server requests.
-func (bpm *BlockMethodsPlugin) ProcessConnectReq(r *http.Request) (int, error) {
+func (bpm *BlockMethodsPlugin) ProcessInitReq(r *http.Request) (int, error) {
 	return http.StatusOK, nil
 }
 
