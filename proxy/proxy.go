@@ -104,42 +104,41 @@ func NewProxy(p *ProxyConfig) (*ArmorProxy, error) {
 	var caCert *tls.Certificate
 	var err error
 
-	// Check if CA certificate files exist
+	// check if the cert and key files exist
 	_, certErr := os.Stat(p.CaCfg.CertPath)
 	_, keyErr := os.Stat(p.CaCfg.KeyPath)
 
-	// If they don't exist, generate new CA certificate
+	// if any of them is missing, generate a new CA cert
 	if os.IsNotExist(certErr) || os.IsNotExist(keyErr) {
 		if err = ca.GenerateRootCAWithConfig(p.CaCfg); err != nil {
 			return nil, fmt.Errorf("failed to generate CA certificate: %w", err)
 		}
 	}
 
-	// Load the CA certificate
 	caCert, err = ca.LoadRootCAFromPath(p.CaCfg.CertPath, p.CaCfg.KeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load CA certificate: %w", err)
 	}
 
-	// x509.SystemCertPool() loads trusted CAs from the system
+	// get the system's cert pool
 	caCertPool, err := x509.SystemCertPool()
 	if err != nil {
-		// If we can't get it, create a new one
+		// or create a new one if we can't get it
 		caCertPool = x509.NewCertPool()
 	}
 
-	// Add Armor's CA certificate to the pool
+	// leaf holds the parsed certificate; check if it's populated
 	if caCert.Leaf == nil {
-		// If Leaf is not populated, parse the certificate
 		leaf, err := x509.ParseCertificate(caCert.Certificate[0])
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
 		}
 		caCert.Leaf = leaf
 	}
+	// add the CA cert to the pool
 	caCertPool.AddCert(caCert.Leaf)
 
-	logger := log.New(p.LogDestination, "ArmorProxy: ", log.LstdFlags)
+	logger := log.New(p.LogDestination, "armor: ", log.LstdFlags)
 
 	manager, err := initPlugins(p.EnabledPlugins, p.PluginsConfig)
 	if err != nil {
@@ -170,7 +169,7 @@ func (a *ArmorProxy) StartHTTP(addr string) error {
 	return server.ListenAndServe()
 }
 
-// StartTLS runs an TLS server for the proxy.
+// StartTLS runs a TLS server for the proxy.
 func (a *ArmorProxy) StartTLS(addr string, certFile, keyFile string) error {
 	server := &http.Server{
 		Addr:         a.config.ListenAddrTLS,
@@ -189,24 +188,18 @@ func (a *ArmorProxy) StartTLS(addr string, certFile, keyFile string) error {
 // ServeHTTP implements the http.Handler interface.
 // It is called for each incoming HTTP request.
 func (a *ArmorProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Log the incoming request if verbose logging is enabled
 	if a.config.Verbose {
 		a.logger.Printf("Received request: %s %s", r.Method, r.URL)
 	}
 
-	// If there's any active plugin, run them
-	// pluginName is the name of the plugin if there was any that returned 4xx
-	// status is the HTTP status code that was decided by the plugins
-	// err is the error, if there was any, in this case it returns with http.StatusServiceUnavailable
-	pluginName, status, err := a.pluginManager.ProcessConnectReq(r)
+	// apply initial plugin processing
+	pluginName, status, err := a.pluginManager.ProcessInitReq(r)
 	if err != nil {
-		// There was an error during a plugin's processing
 		a.logger.Printf("Error sent by %s: %v", pluginName, err)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	if status >= 400 && status < 500 {
-		// If any plugin returns a 4xx error, terminate the request
 		a.logger.Printf("Plugin %s terminated the request", pluginName)
 		http.Error(w, fmt.Sprintf("Request was terminated by %s", pluginName), status)
 		return
@@ -231,20 +224,16 @@ III. Establishes a TLS connection with the target server
 IV. Copies data bidirectionally between the client and target
 */
 func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
-	/*
-	 Hijack the connection to establish a tunnel
-	 When it receive a CONNECT, we need to handle it manually
-	 Reason is that it is not a standard HTTP request/respose cycle
-	*/
+	// need to hijack the connection to intercept after CONNECT completes
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		// Not all http.ResponseWriter implementations support hijacking
+		// not all http.ResponseWriter implementations support hijacking
 		a.logger.Printf("Error: ResponseWriter doesn't support hijacking.")
 		http.Error(w, "Hijacking is not supported", http.StatusInternalServerError)
 		return
 	}
 
-	// Get the underlying connection
+	// method Hijack gets us the underlying net.Conn
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		a.logger.Printf("Error hijacking connection: %v", err)
@@ -253,15 +242,19 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	defer clientConn.Close()
 
-	// Notify client that the tunnel is built
-	// This is the standard response for a successful CONNECT request
+	// send the standard response for a successful CONNECT request
 	if _, err := clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
 		a.logger.Printf("Error writing to client connection: %v", err)
 		clientConn.Close()
 		return
 	}
 
-	// Generate or retrieve a certificate for the requested host
+	/*
+		the following code establishes a TLS connection with the client,
+		while the proxy tricks the client into thinking it's the target,
+		by using a generated a TLS cert for the requested host.
+	*/
+
 	cert, err := a.getCertificate(r.Host)
 	if err != nil {
 		a.logger.Printf("Error getting certificate for %s: %v", r.Host, err)
@@ -269,20 +262,17 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Establish a TLS connection with the client with the generated certificate
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{*cert},
 	}
 	tlsClientConn := tls.Server(clientConn, tlsConfig)
 	defer tlsClientConn.Close()
 
-	// TLS handshake with client
 	if err := tlsClientConn.Handshake(); err != nil {
 		a.logger.Printf("Error in TLS handshake with client: %v", err)
 		return
 	}
 
-	// Establish a TLS connection to the target server
 	targetConn, err := tls.Dial("tcp", r.Host, &tls.Config{
 		RootCAs:            a.caCertPool,
 		InsecureSkipVerify: a.config.AllowInsecure,
@@ -293,19 +283,18 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	defer targetConn.Close()
 
-	// Bidirectional copying of data between client and target server
+	// wg is used to wait for both sides of the connection to finish
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Copy data from client to target server
+	// client -> target copying
 	go func() {
 		defer wg.Done()
 
-		// Buffer will hold the request
 		var b bytes.Buffer
 		tee := io.TeeReader(tlsClientConn, &b)
 
-		// Parse the request, copying it to the buffer
+		// parse the request so it can be passed to the plugins
 		r, err := http.ReadRequest(bufio.NewReader(tee))
 		if err != nil {
 			a.logger.Printf("Error reading request: %v", err)
@@ -324,19 +313,20 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Request was terminated by %s", pluginName), status)
 			targetConn.Close()
 		}
-		// First copy the buffered data to the target
+
+		// copy the buffered data to the target
 		if _, err := io.Copy(targetConn, &b); err != nil {
 			a.logger.Printf("Error copying buffered data to target: %v", err)
 		}
 
-		// And then copy the rest of the client data
+		// and then also copy the rest of the data
 		if _, err := io.Copy(targetConn, tlsClientConn); err != nil && !isClosedConnError(err) {
 			a.logger.Printf("Error copying data from client to target: %v", err)
 		}
 		targetConn.Close()
 	}()
 
-	// Copy data from target server to client
+	// target -> client copying
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(tlsClientConn, targetConn); err != nil && !isClosedConnError(err) {
@@ -345,11 +335,8 @@ func (a *ArmorProxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 		tlsClientConn.Close()
 	}()
 
-	// Wait for both copy operations to complete
-	// We make sure not to exit the function until the connection is closed
 	wg.Wait()
 
-	// Log connection closure if verbose logging is enabled
 	if a.config.Verbose {
 		a.logger.Printf("Closed connection to %s", r.Host)
 	}
@@ -371,28 +358,24 @@ func (a *ArmorProxy) forwardRequest(w http.ResponseWriter, r *http.Request) {
 		ResponseHeaderTimeout: a.config.ReadTimeout,
 	}
 
-	// Clone the request, so we don't modify the original
-	reqClone := r.Clone(r.Context())
+	// clone, so we don't modify the original request
+	rr := r.Clone(r.Context())
 
-	// There are hop-by-hop headers, that must not be retransmitted by proxies
-	// They are scoped to a single hop, not for the entire request chain
-	removeHopByHop(reqClone)
+	// hop-by-hop headers are scoped to a single hop, and should be removed
+	removeHopByHop(rr)
 
-	// Ensure the request URL is absolute
-	if reqClone.URL.Scheme == "" {
-		reqClone.URL.Scheme = "http"
+	if rr.URL.Scheme == "" {
+		rr.URL.Scheme = "http"
 	}
-	if reqClone.URL.Host == "" {
-		reqClone.URL.Host = reqClone.Host
+	if rr.URL.Host == "" {
+		rr.URL.Host = rr.Host
 	}
 
-	// Log the forwarded request if verbose logging is enabled
 	if a.config.Verbose {
-		a.logger.Printf("Forwarding request to %s", reqClone.URL)
+		a.logger.Printf("Forwarding request to %s", rr.URL)
 	}
 
-	// Send the request to the target server
-	resp, err := transport.RoundTrip(reqClone)
+	resp, err := transport.RoundTrip(rr)
 	if err != nil {
 		a.logger.Printf("Error forwarding request :%v", err)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -400,17 +383,16 @@ func (a *ArmorProxy) forwardRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Remove hop-by-hop headers from the response
+	// hop-by-hop headers should be removed from the response as well
 	removeHopByHop(resp)
 
-	// Copy response headers to the client
+	// copy headers from the response to the client
 	for key, values := range resp.Header {
 		for _, value := range values {
 			w.Header().Add(key, value)
 		}
 	}
 
-	// Write status code and body
 	w.WriteHeader(resp.StatusCode)
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		a.logger.Printf("Error copying response body: %v", err)
@@ -422,10 +404,9 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Remove the port from the request host
 	hostWithoutPort := helpers.HostWithoutPort(host)
 
-	// Try the cache first
+	// try the cache first
 	if cert, exists := a.certCache[hostWithoutPort]; exists {
 		if a.config.Verbose {
 			a.logger.Printf("Using cached certificate for %s", host)
@@ -433,7 +414,6 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 		return cert, nil
 	}
 
-	// Generate new certificate for this host
 	if a.config.Verbose {
 		a.logger.Printf("Generating new certificate for %s", hostWithoutPort)
 	}
@@ -443,7 +423,7 @@ func (a *ArmorProxy) getCertificate(host string) (*tls.Certificate, error) {
 		return nil, fmt.Errorf("failed to generate certificate for %s: %w", hostWithoutPort, err)
 	}
 
-	// Add to cache if we haven't exceeded the cache size limit
+	// only cache if there's space in the cache
 	if len(a.certCache) < a.config.CertCacheSize {
 		a.certCache[hostWithoutPort] = cert
 	}
@@ -486,12 +466,9 @@ func isClosedConnError(err error) bool {
 
 // initPlugins initializes the plugin manager and factory with the configuration provided to the proxy instance.
 func initPlugins(pluginNames []string, pluginsConfig map[string]any) (*plugin.ArmorPluginManager, error) {
-	// Plugin manager takes care of registrating and running the plugins
 	manager := plugin.NewArmorPluginManager()
-	// Plugin factory takes care of initializing a new instance of a plugin
 	factory := plugin.NewArmorPluginFactory()
 
-	// Create the plugins via the factory
 	var plugins []plugin.ArmorPlugin
 	for _, pluginName := range pluginNames {
 		p, err := factory.CreatePlugin(pluginName, pluginsConfig)
@@ -501,7 +478,6 @@ func initPlugins(pluginNames []string, pluginsConfig map[string]any) (*plugin.Ar
 		plugins = append(plugins, p)
 	}
 
-	// Register each successfully created plugins
 	for _, plugin := range plugins {
 		manager.Register(plugin)
 	}

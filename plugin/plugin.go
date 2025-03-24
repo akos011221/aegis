@@ -12,7 +12,7 @@ type ArmorPlugin interface {
 	Name() string
 
 	// ProcessConnectReq is called when the proxy receives a CONNECT request.
-	ProcessConnectReq(r *http.Request) (int, error)
+	ProcessInitReq(r *http.Request) (int, error)
 
 	// ProcessMitmReq is called on the MITM connection.
 	ProcessMitmReq(r *http.Request) (int, error)
@@ -39,10 +39,10 @@ func (apm *ArmorPluginManager) Register(ap ArmorPlugin) {
 // It iterates through all registered plugins and calls their
 // ProcessConnectReq method. If any plugin returns 4xx, the
 // name of that plugin is returned along with the status code.
-func (apm *ArmorPluginManager) ProcessConnectReq(r *http.Request) (string, int, error) {
+func (apm *ArmorPluginManager) ProcessInitReq(r *http.Request) (string, int, error) {
 	for _, plugin := range apm.plugins {
 
-		status, err := plugin.ProcessConnectReq(r)
+		status, err := plugin.ProcessInitReq(r)
 
 		if err != nil {
 			return plugin.Name(), http.StatusServiceUnavailable, fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
@@ -83,12 +83,10 @@ func (apf *ArmorPluginFactory) CreatePlugin(name string, config map[string]any) 
 	switch name {
 
 	case "blocklist":
-		// Look for the blocklist configuration in the passed map
 		value, ok := config["blocklist"]
 		if !ok {
 			return nil, errors.New("missing blocklist configuration in the passed config map")
 		}
-		// Make sure the value is a map[string]bool
 		blockedHosts, ok := value.(map[string]bool)
 		if !ok {
 			return nil, errors.New("blocklist configuration must be map[string]bool")
@@ -96,12 +94,10 @@ func (apf *ArmorPluginFactory) CreatePlugin(name string, config map[string]any) 
 		return NewBlocklistPlugin(blockedHosts), nil
 
 	case "block_methods":
-		// Look for the block_methods configuration in the passed map
 		value, ok := config["block_methods"]
 		if !ok {
 			return nil, errors.New("missing block_methods configuration in the passed config map")
 		}
-		// Make sure the value is a map[string]bool
 		blockedMethods, ok := value.(map[string]bool)
 		if !ok {
 			return nil, errors.New("block_methods configuration must be map[string]bool")
