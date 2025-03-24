@@ -1,6 +1,8 @@
 package plugin
 
-import "net/http"
+import (
+	"net/http"
+)
 
 // BlockMethodPlugin holds a slice if blocked HTTP methods.
 type BlockMethodsPlugin struct {
@@ -17,15 +19,15 @@ func (bmp *BlockMethodsPlugin) Name() string {
 	return "block_methods"
 }
 
-// ProcessRequest checks if the request method is blocked.
-func (bpm *BlockMethodsPlugin) ProcessRequest(r *http.Request) (int, error) {
-	if _, ok := bpm.methods[r.Method]; ok {
-		return http.StatusMethodNotAllowed, nil
-	}
+// ProcessConnectRequest does nothing, the plugin is only interested in the actual client to server requests.
+func (bpm *BlockMethodsPlugin) ProcessConnectReq(r *http.Request) (int, error) {
 	return http.StatusOK, nil
 }
 
-// ProcessResponse does nothing, let's the response pass.
-func (bpm *BlockMethodsPlugin) ProcessResponse(r *http.Response) (int, error) {
+// ProcessMitmReq checks if the request method is blocked.
+func (bpm *BlockMethodsPlugin) ProcessMitmReq(r *http.Request) (int, error) {
+	if _, ok := bpm.methods[r.Method]; ok {
+		return http.StatusMethodNotAllowed, nil
+	}
 	return http.StatusOK, nil
 }

@@ -11,13 +11,11 @@ type ArmorPlugin interface {
 	// Name returns the plugin's name.
 	Name() string
 
-	// ProcessRequest is called before forwading the request.
-	// It can modify the request or terminate it.
-	ProcessRequest(r *http.Request) (int, error)
+	// ProcessConnectReq is called when the proxy receives a CONNECT request.
+	ProcessConnectReq(r *http.Request) (int, error)
 
-	// ProcessResponse is called after receiving the response.
-	// It can modify the response or terminate it.
-	ProcessResponse(r *http.Response) (int, error)
+	// ProcessMitmReq is called on the MITM connection.
+	ProcessMitmReq(r *http.Request) (int, error)
 }
 
 // ArmorPluginManager maintains a list of plugins and calls them.
@@ -37,13 +35,14 @@ func (apm *ArmorPluginManager) Register(ap ArmorPlugin) {
 	apm.plugins = append(apm.plugins, ap)
 }
 
-// ProcessRequest iterates through all registered plugins and calls
-// their ProcessRequest method. If any plugin returns 4xx, the
-// request is terminated and the error is returned.
-func (apm *ArmorPluginManager) ProcessRequest(r *http.Request) (string, int, error) {
+// ProcessConnectReq processes the `CONNECT` requests.
+// It iterates through all registered plugins and calls their
+// ProcessConnectReq method. If any plugin returns 4xx, the
+// name of that plugin is returned along with the status code.
+func (apm *ArmorPluginManager) ProcessConnectReq(r *http.Request) (string, int, error) {
 	for _, plugin := range apm.plugins {
 
-		status, err := plugin.ProcessRequest(r)
+		status, err := plugin.ProcessConnectReq(r)
 
 		if err != nil {
 			return plugin.Name(), http.StatusServiceUnavailable, fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
@@ -55,20 +54,19 @@ func (apm *ArmorPluginManager) ProcessRequest(r *http.Request) (string, int, err
 	return "", http.StatusOK, nil
 }
 
-// ProcessResponse iterates through all registered plugins and calls
-// their ProcessResponse method. If any plugin returns 4xx, the
-// response is terminated and the error is returned.
-func (apm *ArmorPluginManager) ProcessResponse(r *http.Response) error {
+func (apm *ArmorPluginManager) ProcessMitmReq(r *http.Request) (string, int, error) {
 	for _, plugin := range apm.plugins {
-		status, err := plugin.ProcessResponse(r)
+
+		status, err := plugin.ProcessMitmReq(r)
+
 		if err != nil {
-			return fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
+			return plugin.Name(), http.StatusServiceUnavailable, fmt.Errorf("plugin %s encountered an error: %w", plugin.Name(), err)
 		}
 		if status >= 400 && status < 500 {
-			return err
+			return plugin.Name(), int(status), nil
 		}
 	}
-	return nil
+	return "", http.StatusOK, nil
 }
 
 // ArmorPluginFactory is responsible for creating new plugin instances.
